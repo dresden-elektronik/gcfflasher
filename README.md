@@ -15,13 +15,14 @@ The sources are POSIX compliant with a small platform specific layer, to make po
 
 * GNU/Linux (ARM and AMD64)
 * Windows (coming soon)
-* macOS (coming soon)
+* macOS
 
 ## Notes
 
 * The current release is not yet included in the deCONZ package (ETA is deCONZ 2.13.x release).
 * The list command `-l` is in development and only partially implemended.
 * The output logging is not streamlined yet.
+* On macOS the `-d` parameter is `/dev/cu.usbmodemDE...` where ... is the serialnumber.
 
 ## Building on Linux
 
@@ -40,19 +41,19 @@ The executable can be compiled without any dependencies, but it is recommended t
 2. Compile the executable with the build script (with GCC)
 
 ```
-./build_linux.sh
+./build_posix.sh
 ```
 
 **Note:** To use a different compiler use:
 
 ```
-CC=clang ./build_linux.sh
+CC=clang ./build_posix.sh
 ```
 
 ### Run
 
 ```
-$ ./GCFFlasher 
+$ ./GCFFlasher
 GCFFlasher v4.0.0 copyright dresden elektronik ingenieurtechnik gmbh
 usage: GCFFlasher <options>
 options:
@@ -68,7 +69,7 @@ options:
 
 ## Differences to previous GCFFlasher version 3.17
 
-* Open sourced under BSD-3-Clause License 
+* Open sourced under BSD-3-Clause License
 * Doesn't require root privileges on Raspberry Pi
 * Rewritten in C instead C++
 * Smaller binary, with 25 Kb vs. previously 250 Kb on Raspberry PI
