@@ -172,7 +172,11 @@ GCF_Status PL_Connect(const char *path)
     {
         baudrate = B38400;
 
-        if (strstr(path, "ACM")) /* ConBee II */
+        if (strstr(path, "ACM")) /* ConBee II Linux */
+        {
+            baudrate = B115200;
+        }
+        else if (strstr(path, "cu.usbmodemDE")) /* ConBee II macOS */
         {
             baudrate = B115200;
         }

@@ -911,6 +911,8 @@ static DeviceType gcfGetDeviceType(const char *devPath)
 
         if (strstr(devPath, "ConBee_II")) { return DEV_CONBEE_2; }
 
+        if (strstr(devPath, "cu.usbmodemDE")) { return DEV_CONBEE_2; }
+
         if (strstr(devPath, "ttyUSB")) { return DEV_CONBEE_1; }
 
         if (strstr(devPath, "usb-FTDI")) { return DEV_CONBEE_1; }
