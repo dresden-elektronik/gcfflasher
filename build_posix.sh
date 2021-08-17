@@ -15,6 +15,14 @@ OS=$(uname)
 
 if [ "$OS" = "Darwin" ]; then
 	CFLAGS="$CFLAGS -DPL_MAC"
+
+	FTDI_LIB=`pkg-config --libs --cflags libftdi1`
+
+	if [ -n "$FTDI_LIB" ]; then
+		CFLAGS="$CFLAGS $FTDI_LIB -DHAS_LIBFTDI -ldl"
+	else
+		echo "libftdi1 not found, building without"
+	fi
 fi
 
 if [ "$OS" = "Linux" ]; then

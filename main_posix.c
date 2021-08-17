@@ -43,7 +43,10 @@ static PL_Internal platform;
 #ifdef PL_LINUX
   #include "linux_get_usb_devices.c"
   #include "linux_libgpiod_reset.c"
-  #include "linux_libftdi_reset.c"
+#endif
+
+#ifdef PL_MAC
+  #include "posix_libftdi_reset.c"
 #endif
 
 static int plSetupPort(int fd, int baudrate)
@@ -106,11 +109,9 @@ int PL_ResetFTDI(int num)
     return plResetFtdiLibGpiod();
 #endif
 
-/* TODO for Windows, BSD and macOS libFTDI is needed
 #ifdef HAS_LIBFTDI
     return plResetLibFtdi();
 #endif
-*/
 
     return -1;
 }

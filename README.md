@@ -50,7 +50,26 @@ The executable can be compiled without any dependencies, but it is recommended t
 CC=clang ./build_posix.sh
 ```
 
-### Run
+## Building on macOS
+
+### Dependencies
+
+The executable can be compiled without any dependencies, but it is recommended to install `libftdi` to support ConBee I.
+
+* A C99 compiler like GCC or Clang
+* The `libftdi` development package can be installed via `brew install libftdi` via [Homebrew](https://brew.sh). 
+
+### Build
+
+1. Checkout this repository
+
+2. Compile the executable with the build script (with Clang)
+
+```
+./build_posix.sh
+```
+
+## Run
 
 ```
 $ ./GCFFlasher

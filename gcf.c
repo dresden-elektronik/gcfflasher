@@ -917,6 +917,8 @@ static DeviceType gcfGetDeviceType(const char *devPath)
 
         if (strstr(devPath, "usb-FTDI")) { return DEV_CONBEE_1; }
 
+        if (strstr(devPath, "cu.usbserial")) { return DEV_CONBEE_1; }
+
         if (strstr(devPath, "ttyAMA")) { return DEV_RASPBEE_1; }
 
         if (strstr(devPath, "ttyS")) { return DEV_RASPBEE_1; }
