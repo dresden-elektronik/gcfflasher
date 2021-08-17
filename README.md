@@ -1,0 +1,77 @@
+# GCFFlasher 4
+
+GCFFlasher is the tool to program the firmware of dresden elektronik's Zigbee products.
+
+## Supported Hardware
+
+* ConBee I
+* ConBee II
+* RaspBee I
+* RaspBee II
+
+## Supported platforms
+
+The sources are POSIX compliant with a small platform specific layer, to make porting to different platforms easy.
+
+* GNU/Linux (ARM and AMD64)
+* Windows (coming soon)
+* macOS (coming soon)
+
+## Notes
+
+* The current release is not yet included in the deCONZ package (ETA is deCONZ 2.13.x release).
+* The list command `-l` is in development and only partially implemended.
+* The output logging is not streamlined yet.
+
+## Building on Linux
+
+### Dependencies
+
+The executable can be compiled without any dependencies, but it is recommended to install `libgpiod` to support RaspBee I, RaspBee II and ConBee I.
+
+* A C99 compiler like GCC or Clang
+* Linux kernel version 4.8
+* The `libgpiod` development package can be installed via `apt install libgpiod-dev` on Debian based distributions. The executable doesn't link directly to libgpiod and will check at runtime if it is available via `dlopen()`.
+
+### Build
+
+1. Checkout this repository
+
+2. Compile the executable with the build script (with GCC)
+
+```
+./build_linux.sh
+```
+
+**Note:** To use a different compiler use:
+
+```
+CC=clang ./build_linux.sh
+```
+
+### Run
+
+```
+$ ./GCFFlasher 
+GCFFlasher v4.0.0 copyright dresden elektronik ingenieurtechnik gmbh
+usage: GCFFlasher <options>
+options:
+ -r              force device reset without programming
+ -f <firmware>   flash firmware file
+ -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee
+ -c              connect and debug serial protocol
+ -t <timeout>    retry until timeout (seconds) is reached
+ -l              list devices
+ -h -?           print this help
+```
+
+
+## Differences to previous GCFFlasher version 3.17
+
+* Open sourced under BSD-3-Clause License 
+* Doesn't require root privileges on Raspberry Pi
+* Rewritten in C instead C++
+* Smaller binary, with 25 Kb vs. previously 250 Kb on Raspberry PI
+* No Qt, libWiringPi and libft2xx (FTDI) dependencies
+* Easier to port to different platforms
+* Suitable for headless systems and standalone setup which don't use deCONZ
