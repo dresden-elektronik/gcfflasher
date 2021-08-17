@@ -413,7 +413,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     else if (event == EV_RX_BTL_PKG_DATA)
     {
 
-        if (gcf->ascii[1] == BTL_ID_RESPONSE)
+        if ((uint8_t)gcf->ascii[1] == BTL_ID_RESPONSE)
         {
             uint32_t btlVersion;
             uint32_t appCrc;
@@ -596,7 +596,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_RX_BTL_PKG_DATA)
     {
-        if (gcf->ascii[1] == BTL_FW_UPDATE_RESPONSE)
+        if ((uint8_t)gcf->ascii[1] == BTL_FW_UPDATE_RESPONSE)
         {
             if (gcf->ascii[2] == 0x00) /* success */
             {
