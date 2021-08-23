@@ -94,6 +94,20 @@ options:
  -h -?           print this help
 ```
 
+## Building on FreeBSD
+
+### Build
+
+1. Checkout this repository
+
+2. Compile the executable with the build script (with Clang)
+
+```
+CC=cc ./build_posix.sh
+```
+
+**Note:** The serial USB device for a ConBee II is `/dev/cuaU0`.
+
 
 ## Differences to previous GCFFlasher version 3.17
 
