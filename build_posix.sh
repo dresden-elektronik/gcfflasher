@@ -11,6 +11,11 @@ OS=$(uname)
 
 IS_GCC=$(grep 'gcc' <<< "$CC")
 
+# test again to catch compilers which pretend to be GCC (Clang on macOs)
+if [ -n "$IS_GCC" ]; then
+	IS_GCC=$(grep '(GCC)' <<< $($CC --version))
+fi
+
 # debug version
 #   debug=1 ./build_linux.sh
 #   gdb --args GCFFlasher -d /dev/ttyACM0 -f ...
