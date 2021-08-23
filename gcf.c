@@ -17,11 +17,15 @@
 #include <inttypes.h> /* printf types */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h> /* va_list, ... */
 #include <string.h> /* memset */
 #include <assert.h>
 #include "buffer_helper.h"
 #include "gcf.h"
 #include "protocol.h"
+
+#define UI_MAX_LINE_LENGTH 255
+#define UI_MAX_LINES 32
 
 #define MAX_DEVICES 4
 
@@ -81,6 +85,12 @@ typedef struct GCF_File_t
     uint8_t fcontent[MAX_GCF_FILE_SIZE];
 } GCF_File;
 
+typedef struct
+{
+    uint16_t length;
+    char buf[UI_MAX_LINE_LENGTH];
+} UI_Line;
+
 /* The GCF struct holds the complete state as well as GCF file data. */
 typedef struct GCF_t
 {
@@ -91,7 +101,13 @@ typedef struct GCF_t
     state_handler_t state;
     state_handler_t substate;
 
+    /* UI line buffering */
+    uint16_t uiCurrentLine;
+    UI_Line uiLines[UI_MAX_LINES];
+
     int retry;
+
+    uint32_t remaining; /* remaining bytes during upload */
 
     Task task;
 
@@ -144,6 +160,9 @@ static void ST_ResetRaspBee(GCF *gcf, Event event);
 
 static void ST_ListDevices(GCF *gcf, Event event);
 
+static UI_Line *UI_NextLine(GCF *gcf);
+void UI_Printf(GCF *gcf, const char *format, ...);
+
 static GCF *gcfInstance = NULL;
 
 
@@ -157,6 +176,95 @@ void put_hex(uint8_t ch, char *buf)
 {
     buf[0] = hex_lookup[(ch >> 4) & 0xF];
     buf[1] = hex_lookup[(ch & 0x0F)];
+}
+
+static UI_Line *UI_NextLine(GCF *gcf)
+{
+    gcf->uiCurrentLine = (gcf->uiCurrentLine + 1) % UI_MAX_LINES;
+    UI_Line *line = &gcf->uiLines[gcf->uiCurrentLine];
+
+    line->buf[0] = '\0';
+    line->length = 0;
+
+    return line;
+}
+
+void UI_Printf(GCF *gcf, const char *format, ...)
+{
+    UI_Line *line = UI_NextLine(gcf);
+
+    va_list args;
+    va_start (args, format);
+    int sz = vsnprintf(&line->buf[0], sizeof(line->buf), format, args);
+    if (sz < 0 || sz > (int)sizeof(line->buf))
+    {
+        line->buf[0] = '\0';
+        line->length = 0;
+    }
+    else
+    {
+        line->length = (uint16_t)sz;
+    }
+    va_end (args);
+
+    if (line->length > 0)
+    {
+        //PL_Printf(DBG_INFO, "UI [%2u]: %s", gcf->uiCurrentLine, line->buf);
+        PL_Print(line->buf);
+    }
+}
+
+#define FMT_BLOCK_OPEN "\u2591"
+#define FMT_BLOCK_DONE "\u2593"
+
+static void UI_UpdateProgress(GCF *gcf)
+{
+    int r;
+    int n;
+    uint16_t w;
+    uint16_t h;
+    uint16_t wmax;
+    uint32_t total;
+    int percent;
+    char buf[256];
+    float frac;
+
+    total = gcf->file.gcfFileSize;
+
+    UI_GetWinSize(&w, &h);
+
+    frac = (float)(total - gcf->remaining) / (float)(total);
+
+    wmax = w - 2 <= 80 ? w : 80; // cap line length
+
+    memset(buf, ' ', wmax);
+    buf[wmax] = '\0';
+
+    n = sprintf(buf, "uploading ");
+
+    percent = ((wmax - n) * frac) + n;
+
+    int nchars = n; // count glyphs not bytes
+    for (; nchars < wmax; nchars++)
+    {
+        if (nchars <= percent)
+            r = sprintf(&buf[n], FMT_BLOCK_DONE);
+        else
+            r = sprintf(&buf[n], FMT_BLOCK_OPEN);
+        n += r;
+    }
+
+    percent = (int)(100.0f * frac);
+    if (percent > 95)
+    {
+        percent = 100;
+    }
+
+    r = sprintf(&buf[n], " %3d %%", percent);
+    Assert(r > 0);
+
+    UI_SetCursor(0, h - 1);
+    PL_Print(&buf[0]);
 }
 
 static void ST_Void(GCF *gcf, Event event)
@@ -257,11 +365,11 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_PKG_UART_RESET)
     {
-        PL_Printf(DBG_INFO, "command reset done\n");
+        UI_Printf(gcf, "command reset done\n");
     }
     else if (event == EV_TIMEOUT)
     {
-        PL_Printf(DBG_INFO, "command reset timeout\n");
+        UI_Printf(gcf, "command reset timeout\n");
         gcf->substate = ST_Void;
         PL_Disconnect();
         gcf->state(gcf, EV_UART_RESET_FAILED);
@@ -275,13 +383,13 @@ static void ST_ResetFtdi(GCF *gcf, Event event)
     {
         if (PL_ResetFTDI(0) == 0)
         {
-            PL_Printf(DBG_DEBUG, "FTDI reset done\n");
+            UI_Printf(gcf, "FTDI reset done\n");
             PL_SetTimeout(1);
             gcf->state(gcf, EV_FTDI_RESET_SUCCESS);
         }
         else
         {
-            PL_Printf(DBG_INFO, "FTDI reset failed\n");
+            UI_Printf(gcf,  "FTDI reset failed\n");
             gcf->state(gcf, EV_FTDI_RESET_FAILED);
         }
     }
@@ -294,13 +402,13 @@ static void ST_ResetRaspBee(GCF *gcf, Event event)
     {
         if (PL_ResetRaspBee() == 0)
         {
-            PL_Printf(DBG_DEBUG, "RaspBee reset done\n");
+            UI_Printf(gcf, "RaspBee reset done\n");
             PL_SetTimeout(1);
             gcf->state(gcf, EV_RASPBEE_RESET_SUCCESS);
         }
         else
         {
-            PL_Printf(DBG_INFO, "RaspBee reset failed\n");
+            UI_Printf(gcf, "RaspBee reset failed\n");
             gcf->state(gcf, EV_RASPBEE_RESET_FAILED);
         }
     }
@@ -318,12 +426,12 @@ static void ST_ListDevices(GCF *gcf, Event event)
     {
         gcfGetDevices(gcf);
 
-        PL_Printf(DBG_INFO, "%d devices found\n", gcf->devCount);
+        UI_Printf(gcf, "%d devices found\n", gcf->devCount);
 
         for (unsigned i = 0; i < gcf->devCount; i++)
         {
             Device *dev = &gcf->devices[i];
-            PL_Printf(DBG_DEBUG, "DEV [%u]: name: %s (%s),path: %s --> %s\n", i, dev->name, dev->serial, dev->path, dev->stablepath);
+            UI_Printf(gcf, "DEV [%u]: name: %s (%s),path: %s --> %s\n", i, dev->name, dev->serial, dev->path, dev->stablepath);
         }
 
         PL_ShutDown();
@@ -334,7 +442,7 @@ static void ST_Program(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
-        PL_Printf(DBG_DEBUG, "flash firmware\n");
+        UI_Printf(gcf, "flash firmware\n");
         gcf->state = ST_Reset;
         gcf->state(gcf, event);
     }
@@ -361,7 +469,7 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
         {
             // todo retry, a couple of times and revert to gcfRetry()
             PL_SetTimeout(500);
-            PL_Printf(DBG_DEBUG, "retry connect bootloader %s\n", gcf->devpath);
+            UI_Printf(gcf, "retry connect bootloader %s\n", gcf->devpath);
         }
     }
 }
@@ -382,7 +490,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     {
         if (++gcf->retry == 3)
         {
-            PL_Printf(DBG_DEBUG, "query bootloader failed\n");
+            UI_Printf(gcf, "query bootloader failed\n");
             gcfRetry(gcf);
         }
         else
@@ -391,7 +499,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            PL_Printf(DBG_DEBUG, "query bootloader id\n");
+            UI_Printf(gcf, "query bootloader id\n");
 
             uint8_t buf[2] = { 'I', 'D' };
 
@@ -404,7 +512,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
         if (gcf->wp > 52 && gcf->ascii[gcf->wp - 1] == '\n' && strstr(gcf->ascii, "Bootloader"))
         {
             PL_ClearTimeout();
-            PL_Printf(DBG_DEBUG, "bootloader detected (%u)\n", gcf->wp);
+            UI_Printf(gcf, "bootloader detected (%u)\n", gcf->wp);
 
             gcf->state = ST_V1ProgramSync;
             gcf->state(gcf, EV_ACTION);
@@ -421,7 +529,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             get_u32_le((uint8_t*)&gcf->ascii[2], &btlVersion);
             get_u32_le((uint8_t*)&gcf->ascii[6], &appCrc);
 
-            PL_Printf(DBG_DEBUG, "bootloader version 0x%08X, app crc 0x%08X\n", btlVersion, appCrc);
+            UI_Printf(gcf, "bootloader version 0x%08X, app crc 0x%08X\n", btlVersion, appCrc);
 
             gcf->state = ST_V3ProgramSync;
             gcf->state(gcf, EV_ACTION);
@@ -451,7 +559,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
         if (gcf->wp > 4 && strstr(gcf->ascii, "READY"))
         {
             PL_ClearTimeout();
-            PL_Printf(DBG_DEBUG, "bootloader syned: %s\n", gcf->ascii);
+            UI_Printf(gcf, "bootloader syned: %s\n", gcf->ascii);
             gcf->state = ST_V1ProgramWriteHeader;
             gcf->state(gcf, EV_ACTION);
         }
@@ -462,7 +570,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        PL_Printf(DBG_DEBUG, "failed to sync bootloader (%u) %s\n", gcf->wp, gcf->ascii);
+        UI_Printf(gcf, "failed to sync bootloader (%u) %s\n", gcf->wp, gcf->ascii);
         gcfRetry(gcf);
     }
 }
@@ -516,12 +624,13 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
             gcfRetry(gcf);
         }
 
-        size_t remaining = (end - page);
-        uint16_t size = remaining > V1_PAGESIZE ? V1_PAGESIZE : remaining;
+        gcf->remaining = (end - page);
+        uint16_t size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
 
-        if (pageNumber % 20 == 0 || remaining < V1_PAGESIZE)
+        if (pageNumber % 20 == 0 || gcf->remaining < V1_PAGESIZE)
         {
-            PL_Printf(DBG_DEBUG, "GET 0x%04X (page %u)\n", pageNumber, pageNumber);
+            // UI_Printf(gcf, "GET 0x%04X (page %u)\n", pageNumber, pageNumber);
+            UI_UpdateProgress(gcf);
         }
 
         gcf->wp = 0;
@@ -529,10 +638,11 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
 
         PROT_Write(page, size);
 
-        if ((remaining - size) == 0)
+
+        if ((gcf->remaining - size) == 0)
         {
             gcf->state = ST_V1ProgramValidate;
-            PL_Printf(DBG_DEBUG, "done, wait validation...\n");
+            UI_Printf(gcf, "\ndone, wait validation...\n");
             PL_SetTimeout(25600);
         }
         else
@@ -554,7 +664,7 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event)
 
         if (gcf->wp > 6 && strstr(gcf->ascii, "#VALID CRC"))
         {
-            PL_Printf(DBG_DEBUG, FMT_GREEN "firmware successful written\n" FMT_RESET, gcf->ascii);
+            UI_Printf(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET, gcf->ascii);
             PL_ShutDown();
         }
         else
@@ -625,9 +735,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             get_u32_le((uint8_t*)&gcf->ascii[2], &offset);
             get_u16_le((uint8_t*)&gcf->ascii[6], &length);
 
-
-            PL_Printf(DBG_DEBUG, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
-
+            UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
 
             uint8_t *buf = (uint8_t*)&gcf->ascii[0];
             uint8_t *p = buf;
@@ -636,7 +744,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             *p++ = BTL_FW_DATA_RESPONSE;
 
             uint8_t status = 0; // success
-            uint32_t remaining = 0;
+            gcf->remaining = 0;
 
             if ((offset + length) > gcf->file.gcfFileSize)
             {
@@ -653,8 +761,8 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             else
             {
                 Assert(gcf->file.gcfFileSize > offset);
-                remaining = gcf->file.gcfFileSize - offset;
-                length = length < remaining ? length : (uint16_t)remaining;
+                gcf->remaining = gcf->file.gcfFileSize - offset;
+                length = length < gcf->remaining ? length : (uint16_t)gcf->remaining;
                 Assert(length > 0);
             }
 
@@ -670,13 +778,15 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             }
             else
             {
-                PL_Printf(DBG_DEBUG, "failed to handle data request, status: %u\n", status);
+                UI_Printf(gcf, "failed to handle data request, status: %u\n", status);
             }
 
             Assert(p > buf);
             Assert(p < buf + sizeof(gcf->ascii));
 
             PROT_SendFlagged(buf, p - buf);
+
+            UI_UpdateProgress(gcf);
         }
     }
     else if (event == EV_TIMEOUT)
@@ -697,7 +807,7 @@ static void ST_Connect(GCF *gcf, Event event)
         else
         {
             gcf->state = ST_Init;
-            PL_Printf(DBG_DEBUG, "failed to connect\n");
+            UI_Printf(gcf, "failed to connect\n");
             PL_SetTimeout(10000);
         }
     }
@@ -714,7 +824,7 @@ static void ST_Connected(GCF *gcf, Event event)
     {
         PL_ClearTimeout();
         gcf->state = ST_Init;
-        PL_Printf(DBG_DEBUG, "disconnected\n");
+        UI_Printf(gcf, "disconnected\n");
         PL_SetTimeout(1000);
     }
 }
@@ -836,7 +946,6 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len)
                 /* sanity rollback */
                 gcf->wp = 0;
                 gcf->ascii[gcf->wp] = '\0';
-                PL_Printf(DBG_DEBUG, "data buffer full\n");
             }
         }
 
@@ -852,7 +961,7 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len)
         }
         *p = '\0';
 
-        PL_Printf(DBG_INFO, FMT_GREEN "recv:" FMT_RESET " %d bytes, %s\n", len, gcf->ascii);
+        UI_Printf(gcf, FMT_GREEN "recv:" FMT_RESET " %d bytes, %s\n", len, gcf->ascii);
     }
 #endif
 
@@ -865,7 +974,7 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
 
     GCF *gcf = gcfInstance;
 
-    if (data[0] != BTL_MAGIC)
+    if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
         char *p = &gcf->ascii[0];
         for (int i = 0; i < len; i++, p += 2)
@@ -873,7 +982,7 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
             put_hex(data[i], p);
         }
         *p = '\0';
-        PL_Printf(DBG_DEBUG, "packet: %d bytes, %s\n", len, gcf->ascii);
+        UI_Printf(gcf, "packet: %d bytes, %s\n", len, gcf->ascii);
     }
 
     if (data[0] == 0x0B && len >= 8) /* write parameter response */
@@ -935,7 +1044,7 @@ static void gcfRetry(GCF *gcf)
     uint64_t now = PL_Time();
     if (gcf->maxTime > now)
     {
-        PL_Printf(DBG_DEBUG, "retry: %d seconds left\n", (int)(gcf->maxTime - now) / 1000);
+        UI_Printf(gcf, "retry: %d seconds left\n", (int)(gcf->maxTime - now) / 1000);
 
         gcf->state = ST_Init;
         gcf->substate = ST_Void;
@@ -965,7 +1074,7 @@ static void gcfPrintHelp()
     " -h -?           print this help\n";
 
 
-    PL_Printf(DBG_INFO, "%s\n", usage);
+    PL_Print(usage);
 }
 
 static GCF_Status gcfProcessCommandline(GCF *gcf)

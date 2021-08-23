@@ -50,6 +50,8 @@ void GCF_HandleEvent(GCF *gcf, Event event);
 
 int GCF_ParseFile(GCF_File *file);
 
+void put_hex(uint8_t ch, char *buf);
+
 /* Platform specific declarations.
 
    The functions prefixed with PL_ need to be implemented for a target platform.
@@ -121,7 +123,17 @@ typedef enum
     DBG_RAW   = 0x0004
 } DebugLevel;
 
-#define FMT_GREEN "\x1b[32m"
-#define FMT_RESET "\x1b[0m"
+/* ASCII escape codes
+
+   https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+*/
+#define FMT_ESC "\x1b"
+#define FMT_GREEN FMT_ESC "[32m"
+#define FMT_RESET FMT_ESC "[0m"
+
+void PL_Print(const char *line);
 
 void PL_Printf(DebugLevel level, const char *format, ...);
+
+void UI_GetWinSize(uint16_t *w, uint16_t *h);
+void UI_SetCursor(uint16_t x, uint16_t y);

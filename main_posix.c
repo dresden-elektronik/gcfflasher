@@ -20,11 +20,14 @@
 #include <fcntl.h> /* open() */
 #include <unistd.h> /* close() */
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <time.h>
 #include <string.h> /* memset() */
 #include <errno.h>
 #include <dlfcn.h>
 #include <termios.h> /* POSIX terminal control definitions */
+
+#include <ctype.h>
 
 #include "gcf.h"
 #include "protocol.h"
@@ -143,8 +146,19 @@ void PL_Free(void *p)
     }
 }
 
+void PL_Print(const char *line)
+{
+    write(STDOUT_FILENO, line, strlen(line));
+}
+
 void PL_Printf(DebugLevel level, const char *format, ...)
 {
+#ifdef NDEBUG
+    if (level == DBG_DEBUG)
+    {
+        return;
+    }
+#endif
     va_list args;
     va_start (args, format);
     vprintf(format, args);
@@ -182,7 +196,6 @@ GCF_Status PL_Connect(const char *path)
             baudrate = B115200;
         }
     }
-
 
     plSetupPort(platform.fd, baudrate);
 
@@ -278,6 +291,26 @@ int PROT_Flush()
     }
 
     return -1;
+}
+
+void UI_GetWinSize(uint16_t *w, uint16_t *h)
+{
+    struct winsize size;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
+
+    *w = size.ws_col;
+    *h = size.ws_row;
+}
+
+/*  Unicode box drawing chars
+    https://en.wikipedia.org/wiki/Box-drawing_character
+*/
+void UI_SetCursor(uint16_t x, uint16_t y)
+{
+    // ESC[{line};{column}H
+    char buf[24];
+    sprintf(buf, FMT_ESC "[%u;%uH", (unsigned)y, (unsigned)x);
+    PL_Print(buf);
 }
 
 static int PL_Loop(GCF *gcf)
