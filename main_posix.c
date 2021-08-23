@@ -148,7 +148,8 @@ void PL_Free(void *p)
 
 void PL_Print(const char *line)
 {
-    write(STDOUT_FILENO, line, strlen(line));
+    int n = write(STDOUT_FILENO, line, strlen(line));
+    (void)n;
 }
 
 void PL_Printf(DebugLevel level, const char *format, ...)
