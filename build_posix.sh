@@ -8,7 +8,8 @@ NEED_LIBDL=0
 DEBUG=${debug:-}
 CC=${CC:-gcc}
 OS=$(uname)
-#CC=musl-gcc
+
+IS_GCC=$(grep 'gcc' <<< "$CC")
 
 # debug version
 #   debug=1 ./build_linux.sh
@@ -50,7 +51,10 @@ else
 fi
 
 if [ "$NEED_LIBDL" -eq 1 ]; then
-	CFLAGS="$CFLAGS -Wl,--no-as-needed -ldl"
+	if [ -n "$IS_GCC" ]; then
+		CFLAGS="$CFLAGS -Wl,--no-as-needed"
+	fi
+	CFLAGS="$CFLAGS -ldl"
 fi
 
 echo "$CC $CFLAGS"
