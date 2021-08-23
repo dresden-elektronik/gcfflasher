@@ -4,6 +4,7 @@ TARGET=GCFFlasher
 
 SRCS="main_posix.c gcf.c buffer_helper.c protocol.c"
 CFLAGS="-Wall"
+NEED_LIBDL=0
 DEBUG=${debug:-}
 CC=${CC:-gcc}
 OS=$(uname)
@@ -16,10 +17,11 @@ OS=$(uname)
 if [ "$OS" = "Darwin" ]; then
 	CFLAGS="$CFLAGS -DPL_MAC"
 
-	FTDI_LIB=`pkg-config --libs --cflags libftdi1`
+	FTDI_LIB=`pkg-config --cflags --libs libftdi1`
 
 	if [ -n "$FTDI_LIB" ]; then
-		CFLAGS="$CFLAGS $FTDI_LIB -DHAS_LIBFTDI -ldl"
+		CFLAGS="$CFLAGS $FTDI_LIB -DHAS_LIBFTDI"
+		NEED_LIBDL=1
 	else
 		echo "libftdi1 not found, building without"
 	fi
@@ -34,7 +36,8 @@ if [ "$OS" = "Linux" ]; then
 	GPIOD_LIB=`pkg-config --cflags --libs libgpiod`
 
 	if [ -n "$GPIOD_LIB" ]; then
-		CFLAGS="$CFLAGS -DHAS_LIBGPIOD -ldl"
+		CFLAGS="$CFLAGS -DHAS_LIBGPIOD"
+		NEED_LIBDL=1
 	else
 		echo "libgpiod-dev not found, building without"
 	fi
@@ -44,6 +47,10 @@ if [ -n "$DEBUG" ]; then
 	CFLAGS="$CFLAGS -g -O0"
 else
 	CFLAGS="$CFLAGS -O2 -DNDEBUG"
+fi
+
+if [ "$NEED_LIBDL" -eq 1 ]; then
+	CFLAGS="$CFLAGS -Wl,--no-as-needed -ldl"
 fi
 
 echo "$CC $CFLAGS"

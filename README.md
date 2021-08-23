@@ -32,7 +32,16 @@ The executable can be compiled without any dependencies, but it is recommended t
 
 * A C99 compiler like GCC or Clang
 * Linux kernel version 4.8
-* The `libgpiod` development package can be installed via `apt install libgpiod-dev` on Debian based distributions. The executable doesn't link directly to libgpiod and will check at runtime if it is available via `dlopen()`.
+* pkg-config
+* libgpiod
+
+The executable doesn't link directly to libgpiod and will check at runtime if it is available via `dlopen()`.
+
+On Debian based distributions the build dependencies are installed by:
+
+```
+apt install pkg-config build-essential libgpiod-dev
+```
 
 ### Build
 
