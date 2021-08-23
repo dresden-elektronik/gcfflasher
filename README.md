@@ -75,7 +75,7 @@ The executable can be compiled without any dependencies, but it is recommended t
 2. Compile the executable with the build script (with Clang)
 
 ```
-./build_posix.sh
+CC=clang ./build_posix.sh
 ```
 
 ## Run
