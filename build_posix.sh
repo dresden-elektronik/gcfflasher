@@ -9,11 +9,11 @@ DEBUG=${debug:-}
 CC=${CC:-gcc}
 OS=$(uname)
 
-IS_GCC=$(grep 'gcc' <<< "$CC")
+IS_GCC=$(echo "$CC" | grep 'gcc')
 
 # test again to catch compilers which pretend to be GCC (Clang on macOs)
 if [ -n "$IS_GCC" ]; then
-	IS_GCC=$(grep '(GCC)' <<< $($CC --version))
+	IS_GCC=$(echo `$CC --version` | grep 'gcc')
 fi
 
 # debug version
