@@ -116,12 +116,19 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
         memcpy(dev->stablepath, buf, strlen(buf) + 1);
 
         /* copy path (/dev/ttyACM0 ...) */
-        p = realpath(buf, dev->path);
+        /* realpath writes up to PATH_MAX bytes, and might crash even if the resulting string is smaller */
+        char rbuf[PATH_MAX];
+        p = realpath(buf, rbuf);
 
         if (!p)
         {
             Assert(!"failed to get symbolic link target");
             continue;
+        }
+
+        if (strlen(p) + 1 < sizeof(dev->path))
+        {
+        	memcpy(dev->path, p, strlen(p) + 1);
         }
 
         dev++;
