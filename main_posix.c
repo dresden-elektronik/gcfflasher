@@ -168,7 +168,11 @@ void PL_Printf(DebugLevel level, const char *format, ...)
 
 GCF_Status PL_Connect(const char *path)
 {
-    Assert(platform.fd == 0);
+    if (platform.fd != 0)
+    {
+        PL_Printf(DBG_DEBUG, "device already connected %s\n", path);
+        return GCF_SUCCESS;
+    }
 
     platform.fd = open(path, O_CLOEXEC | O_RDWR /*| O_NONBLOCK*/);
 
