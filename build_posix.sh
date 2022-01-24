@@ -13,7 +13,7 @@ IS_GCC=$(echo "$CC" | grep 'gcc')
 
 # test again to catch compilers which pretend to be GCC (Clang on macOs)
 if [ -n "$IS_GCC" ]; then
-	IS_GCC=$(echo `$CC --version` | grep 'gcc')
+	IS_GCC=$($CC --version | grep 'gcc')
 fi
 
 # debug version
@@ -23,7 +23,7 @@ fi
 if [ "$OS" = "Darwin" ]; then
 	CFLAGS="$CFLAGS -DPL_MAC"
 
-	FTDI_LIB=`pkg-config --cflags --libs libftdi1`
+	FTDI_LIB=$(pkg-config --cflags --libs libftdi1)
 
 	if [ -n "$FTDI_LIB" ]; then
 		CFLAGS="$CFLAGS $FTDI_LIB -DHAS_LIBFTDI"
@@ -39,7 +39,7 @@ if [ "$OS" = "Linux" ]; then
 	# On Debian based distributions the development files can be installed via:
 	#   apt install libgpiod-dev
 
-	GPIOD_LIB=`pkg-config --cflags --libs libgpiod`
+	GPIOD_LIB=$(pkg-config --cflags --libs libgpiod)
 
 	if [ -n "$GPIOD_LIB" ]; then
 		CFLAGS="$CFLAGS -DHAS_LIBGPIOD"
