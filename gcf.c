@@ -71,7 +71,7 @@ typedef enum
 
 typedef struct GCF_File_t
 {
-    char fname[64];
+    char fname[MAX_DEV_PATH_LENGTH];
     size_t fsize;
 
     uint32_t fwVersion; /* taken from file name */
@@ -883,13 +883,15 @@ int GCF_ParseFile(GCF_File *file)
 
     {
         const char *version = strstr(file->fname, "0x");
-        if (!version)
+        if (version)
         {
-            return -2;
+            file->fwVersion = strtoul(version, NULL, 16);
+            Assert(file->fwVersion != 0);
         }
-
-        file->fwVersion = strtoul(version, NULL, 16);
-        Assert(file->fwVersion != 0);
+        else
+        {
+            file->fwVersion = 0;
+        }
     }
 
     /* process GCF header (14-bytes, little-endian)
@@ -1244,6 +1246,11 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
         */
         if (gcf->devType == DEV_RASPBEE_1 &&
             (gcf->file.fwVersion & FW_VERSION_PLATFORM_MASK) == FW_VERSION_PLATFORM_R21)
+        {
+            PL_Printf(DBG_DEBUG, "assume RaspBee II\n");
+            gcf->devType = DEV_RASPBEE_2;
+        }
+        else if (gcf->devType == DEV_RASPBEE_1 && gcf->file.gcfTargetAddress == 0x5000)
         {
             PL_Printf(DBG_DEBUG, "assume RaspBee II\n");
             gcf->devType = DEV_RASPBEE_2;
