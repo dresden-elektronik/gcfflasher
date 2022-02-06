@@ -1032,6 +1032,8 @@ static DeviceType gcfGetDeviceType(const char *devPath)
 
         if (strstr(devPath, "ttyAMA")) { return DEV_RASPBEE_1; }
 
+        if (strstr(devPath, "ttyAML")) { return DEV_RASPBEE_1; } /* Odroid */
+
         if (strstr(devPath, "ttyS")) { return DEV_RASPBEE_1; }
 
         if (strstr(devPath, "/serial")) { return DEV_RASPBEE_1; }
