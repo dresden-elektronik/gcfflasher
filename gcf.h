@@ -127,9 +127,15 @@ typedef enum
 
    https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 */
-#define FMT_ESC "\x1b"
-#define FMT_GREEN FMT_ESC "[32m"
-#define FMT_RESET FMT_ESC "[0m"
+#ifdef PL_NO_ESCASCII
+  #define FMT_ESC ""
+  #define FMT_GREEN FMT_ESC ""
+  #define FMT_RESET FMT_ESC ""
+#else
+  #define FMT_ESC "\x1b"
+  #define FMT_GREEN FMT_ESC "[32m"
+  #define FMT_RESET FMT_ESC "[0m"
+#endif
 
 void PL_Print(const char *line);
 

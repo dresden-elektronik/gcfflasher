@@ -214,9 +214,13 @@ void UI_Printf(GCF *gcf, const char *format, ...)
     }
 }
 
-#define FMT_BLOCK_OPEN "\u2591"
-#define FMT_BLOCK_DONE "\u2593"
-
+#ifdef PL_NO_UTF8
+  #define FMT_BLOCK_OPEN "."
+  #define FMT_BLOCK_DONE "#"
+#else
+  #define FMT_BLOCK_OPEN "\u2591"
+  #define FMT_BLOCK_DONE "\u2593"
+#endif
 static void UI_UpdateProgress(GCF *gcf)
 {
     int r;
@@ -260,7 +264,7 @@ static void UI_UpdateProgress(GCF *gcf)
         percent = 100;
     }
 
-    r = sprintf(&buf[n], " %3d %%", percent);
+    r = sprintf(&buf[n], "\r %3d %%", percent);
     Assert(r > 0);
 
     UI_SetCursor(0, h - 1);

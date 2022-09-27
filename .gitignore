@@ -1,2 +1,4 @@
-
+*.obj
+*.GCF
+*.exe
 GCFFlasher
