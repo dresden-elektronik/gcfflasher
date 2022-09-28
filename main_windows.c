@@ -1,13 +1,21 @@
 
+
+#pragma comment(lib, "SetupAPI.lib")
+#pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "Advapi32.lib")
+
 //#define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <initguid.h>
 #include <Setupapi.h>
+#include <shlwapi.h>
+#include <tchar.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "gcf.h"
 
@@ -70,7 +78,7 @@ uint64_t PL_Time()
 /*! Lets the programm sleep for \p ms milliseconds. */
 void PL_MSleep(uint64_t ms)
 {
-    Sleep(ms);
+    Sleep((DWORD)ms);
 }
 
 
@@ -94,7 +102,6 @@ int PL_GetDevices(Device *devs, size_t max)
 {
     // http://www.naughter.com/enumser.html
 
-    char comPort[64];
     size_t result = 0;
 
     result = GetComPort("USB", devs, max);
@@ -108,7 +115,7 @@ int PL_GetDevices(Device *devs, size_t max)
         }
     }
 
-    return result;
+    return (int)result;
 }
 
 static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
@@ -125,7 +132,7 @@ static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
     SP_DEVINFO_DATA DeviceInfoData;
     //const char *DevEnum = "USB";
     //const char *DevEnum = "FTDIBUS";
-    char ExpectedDeviceId[80]; //Store hardware id
+    //char ExpectedDeviceId[80]; //Store hardware id
     BYTE szBuffer[1024];
     DEVPROPTYPE ulPropertyType;
     DWORD dwSize = 0;
@@ -381,7 +388,7 @@ int PL_ReadFile(const char *path, uint8_t *buf, size_t buflen)
         return result; 
     }
 
-    if (ReadFile(hFile, buf, buflen, &nread, NULL))
+    if (ReadFile(hFile, buf, (DWORD)buflen, &nread, NULL))
     {
         if (nread > 0)
         {
