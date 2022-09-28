@@ -76,7 +76,7 @@ void PL_ClearTimeout();
 #define MAX_DEV_NAME_LENGTH 16
 #define MAX_DEV_SERIALNR_LENGTH 16
 #define MAX_DEV_PATH_LENGTH 255
-#define MAX_GCF_FILE_SIZE (1024 * 256) // 250K
+#define MAX_GCF_FILE_SIZE (1024 * 800) // 800K
 
 typedef struct
 {
