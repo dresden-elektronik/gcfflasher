@@ -11,7 +11,7 @@
 /* This file implements the platform independend part of GCFFlasher.
  */
 
-#define APP_VERSION "v4.0.1-beta"
+#define APP_VERSION "v4.0.3-beta"
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h> /* printf types */
@@ -244,7 +244,7 @@ static void UI_UpdateProgress(GCF *gcf)
     memset(buf, ' ', wmax);
     buf[wmax] = '\0';
 
-    n = sprintf(buf, "uploading ");
+    n = sprintf(buf, " uploading ");
 
     percent = ((wmax - n) * frac) + n;
 
@@ -373,7 +373,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Printf(gcf, "command reset timeout\n");
+        // UI_Printf(gcf, "command reset timeout\n");
         gcf->substate = ST_Void;
         PL_Disconnect();
         gcf->state(gcf, EV_UART_RESET_FAILED);
@@ -750,7 +750,9 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             get_u32_le((uint8_t*)&gcf->ascii[2], &offset);
             get_u16_le((uint8_t*)&gcf->ascii[6], &length);
 
+#ifndef NDEBUG
             UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
+#endif
 
             uint8_t *buf = (uint8_t*)&gcf->ascii[0];
             uint8_t *p = buf;
@@ -799,7 +801,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             Assert(p > buf);
             Assert(p < buf + sizeof(gcf->ascii));
 
-            PROT_SendFlagged(buf, p - buf);
+            PROT_SendFlagged(buf, (uint16_t)(p - buf));
 
             UI_UpdateProgress(gcf);
         }
@@ -971,19 +973,10 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len)
 
         gcf->state(gcf, EV_RX_ASCII);
     }
-#ifndef NDEBUG
     else
     {
-        char *p = &gcf->ascii[0];
-        for (int i = 0; i < len; i++, p += 2)
-        {
-            put_hex(data[i], p);
-        }
-        *p = '\0';
-
-        UI_Printf(gcf, FMT_GREEN "recv:" FMT_RESET " %d bytes, %s\n", len, gcf->ascii);
+        gcfDebugHex(gcf, "recv", data, len);
     }
-#endif
 
     PROT_ReceiveFlagged(&gcf->rxstate, data, len);
 }
@@ -1011,7 +1004,7 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
         {
             case 0x26: /* param: watchdog timeout */
             {
-                gcf->state(gcfInstance, EV_PKG_UART_RESET);
+                gcf->state(gcf, EV_PKG_UART_RESET);
             } break;
 
             default:
@@ -1024,10 +1017,9 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
         {
             memcpy(&gcf->ascii[0], data, len);
             gcf->wp = len;
-            gcf->state(gcfInstance, EV_RX_BTL_PKG_DATA);
+            gcf->state(gcf, EV_RX_BTL_PKG_DATA);
         }
     }
-
 }
 
 static DeviceType gcfGetDeviceType(GCF *gcf)
@@ -1094,6 +1086,30 @@ static void gcfPrintHelp()
 
 
     PL_Print(usage);
+}
+
+void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size)
+{
+#ifndef NDEBUG
+    char *p;
+    char buf[1024];
+
+    p = &buf[0];
+
+    Assert(size < (sizeof(buf) / 2) - 1);
+    for (unsigned i = 0; i < size; i++, p += 2)
+    {
+        put_hex(data[i], p);
+    }
+    *p = '\0';
+
+    UI_Printf(gcf, FMT_GREEN "%s:" FMT_RESET " %s (%u bytes)\n", msg, &buf[0], size);
+#else
+    (void)gcf;
+    (void)msg;
+    (void)data;
+    (void)size;
+#endif
 }
 
 static GCF_Status gcfProcessCommandline(GCF *gcf)

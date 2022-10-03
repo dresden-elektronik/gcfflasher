@@ -11,6 +11,7 @@
 #include <Setupapi.h>
 #include <shlwapi.h>
 #include <tchar.h>
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -27,6 +28,8 @@ typedef struct
     HANDLE fd;
     uint8_t running;
     uint8_t rxbuf[64];
+    uint8_t txbuf[2048];
+    unsigned txpos;
 
     LARGE_INTEGER frequency;
     BOOL frequencyValid;
@@ -271,6 +274,8 @@ GCF_Status PL_Connect(const char *path)
         return GCF_FAILED;
     }
 
+    platform.txpos = 0;
+
     platform.fd = CreateFile(
                   buf,
                   GENERIC_READ | GENERIC_WRITE,
@@ -345,10 +350,11 @@ void PL_Disconnect()
 {
     if (platform.fd != INVALID_HANDLE_VALUE)
     {
+        platform.txpos = 0;
         CloseHandle(platform.fd);
         platform.fd = INVALID_HANDLE_VALUE;
-        GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
     }
+    GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
 }
 
 /*! Shuts down platform layer (ends main loop). */
@@ -436,6 +442,11 @@ void UI_SetCursor(uint16_t x, uint16_t y)
 
 int PROT_Write(const uint8_t *data, uint16_t len)
 {
+    if (len == 0)
+        return 0;
+
+    Assert(platform.fd != INVALID_HANDLE_VALUE);
+
     BOOL Status;
     DWORD BytesWritten = 0;          // No of bytes written to the port
 
@@ -447,7 +458,18 @@ int PROT_Write(const uint8_t *data, uint16_t len)
                        NULL);
     if (Status == FALSE)
     {
+        DWORD dw = GetLastError();
+        PL_Printf(DBG_DEBUG, "failed write com port, error: 0%08X\n", dw);
         return 0;
+    }
+
+    if (BytesWritten != (int)len)
+    {
+        PL_Printf(DBG_DEBUG, "failed write of %u bytes (%d written)\n", len, (int)BytesWritten);
+    }
+    else
+    {
+        gcfDebugHex(platform.gcf, "send", data, len);
     }
 
     return BytesWritten;
@@ -455,12 +477,28 @@ int PROT_Write(const uint8_t *data, uint16_t len)
 
 int PROT_Putc(uint8_t ch)
 {
-    return PROT_Write(&ch, 1);
+    Assert(platform.txpos + 1 < sizeof(platform.txbuf));
+    if (platform.txpos + 1 < sizeof(platform.txbuf))
+    {
+        platform.txbuf[platform.txpos] = ch;
+        platform.txpos += 1;
+        return 1;
+    }
+    return 0;
 }
 
 int PROT_Flush()
 {
-    return 0;
+    int result = 0;
+
+    if (platform.txpos != 0)
+    {
+        result = PROT_Write(&platform.txbuf[0], platform.txpos);
+        Assert(result == (int)platform.txpos); /* support/handle partial writes? */
+        platform.txpos = 0;
+    }
+
+    return result;
 }
 
 static void PL_Loop(GCF *gcf)

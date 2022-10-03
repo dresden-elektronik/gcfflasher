@@ -49,7 +49,7 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len);
 void GCF_HandleEvent(GCF *gcf, Event event);
 
 int GCF_ParseFile(GCF_File *file);
-
+void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size);
 void put_hex(uint8_t ch, char *buf);
 
 /* Platform specific declarations.
