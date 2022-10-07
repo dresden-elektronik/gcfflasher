@@ -14,7 +14,7 @@ GCFFlasher is the tool to program the firmware of dresden elektronik's Zigbee pr
 The sources are POSIX compliant with a small platform specific layer, to make porting to different platforms easy.
 
 * GNU/Linux (ARM and AMD64)
-* Windows (coming soon)
+* Windows
 * macOS
 
 ## Notes
@@ -57,6 +57,27 @@ apt install pkg-config build-essential libgpiod-dev
 
 ```
 CC=clang ./build_posix.sh
+```
+
+## Building on Windows
+
+### Dependencies
+
+Visual Studio with MSVC C++ compiler needs to be installed. Tested with VS 2022 but older versions should work fine as well.
+The executable has no external dependencies.
+
+### Build
+
+1. Checkout this repository
+
+2. Open "x86 Native Tools Command Promt for VS 2022" via Windows Start Menu
+
+3. Navigate to the source directory, e.g. `cd C:\gcfflasher` 
+
+3. Compile the executable with the build script (with MSVC)
+
+```
+./build_windows.bat
 ```
 
 ## Building on macOS
