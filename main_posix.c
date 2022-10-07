@@ -213,8 +213,8 @@ void PL_Disconnect()
     {
         close(platform.fd);
         platform.fd = 0;
-        GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
     }
+    GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
 }
 
 void PL_ShutDown()

@@ -11,7 +11,7 @@
 /* This file implements the platform independend part of GCFFlasher.
  */
 
-#define APP_VERSION "v4.0.0-beta"
+#define APP_VERSION "v4.0.3-beta"
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h> /* printf types */
@@ -126,7 +126,7 @@ typedef struct GCF_t
 } GCF;
 
 
-static DeviceType gcfGetDeviceType(const char *devPath);
+static DeviceType gcfGetDeviceType(GCF *gcf);
 static void gcfRetry(GCF *gcf);
 static void gcfPrintHelp();
 static GCF_Status gcfProcessCommandline(GCF *gcf);
@@ -214,9 +214,13 @@ void UI_Printf(GCF *gcf, const char *format, ...)
     }
 }
 
-#define FMT_BLOCK_OPEN "\u2591"
-#define FMT_BLOCK_DONE "\u2593"
-
+#ifdef PL_NO_UTF8
+  #define FMT_BLOCK_OPEN "."
+  #define FMT_BLOCK_DONE "#"
+#else
+  #define FMT_BLOCK_OPEN "\u2591"
+  #define FMT_BLOCK_DONE "\u2593"
+#endif
 static void UI_UpdateProgress(GCF *gcf)
 {
     int r;
@@ -240,7 +244,7 @@ static void UI_UpdateProgress(GCF *gcf)
     memset(buf, ' ', wmax);
     buf[wmax] = '\0';
 
-    n = sprintf(buf, "uploading ");
+    n = sprintf(buf, " uploading ");
 
     percent = ((wmax - n) * frac) + n;
 
@@ -260,7 +264,7 @@ static void UI_UpdateProgress(GCF *gcf)
         percent = 100;
     }
 
-    r = sprintf(&buf[n], " %3d %%", percent);
+    r = sprintf(&buf[n], "\r %3d %%", percent);
     Assert(r > 0);
 
     UI_SetCursor(0, h - 1);
@@ -369,7 +373,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Printf(gcf, "command reset timeout\n");
+        // UI_Printf(gcf, "command reset timeout\n");
         gcf->substate = ST_Void;
         PL_Disconnect();
         gcf->state(gcf, EV_UART_RESET_FAILED);
@@ -493,17 +497,29 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             UI_Printf(gcf, "query bootloader failed\n");
             gcfRetry(gcf);
         }
-        else
+        else if (gcf->file.gcfFileType < 30)
         {
             /* 2) V1 Bootloader of ConBee II
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            UI_Printf(gcf, "query bootloader id\n");
+            UI_Printf(gcf, "query bootloader id V1\n");
 
             uint8_t buf[2] = { 'I', 'D' };
 
             PROT_Write(buf, sizeof(buf));
+            PL_SetTimeout(200);
+        }
+        else if (gcf->file.gcfFileType >= 30)
+        {
+            /* 3) V3 Bootloader of RaspBee II, Hive
+                  Query the id here, after initial timeout. This also
+                  catches cases where no firmware was installed.
+            */
+            UI_Printf(gcf, "query bootloader id V3\n");
+
+            uint8_t cmd[2] = { BTL_MAGIC, BTL_ID_REQUEST };
+            PROT_SendFlagged(cmd, sizeof(cmd));
             PL_SetTimeout(200);
         }
     }
@@ -520,7 +536,6 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     }
     else if (event == EV_RX_BTL_PKG_DATA)
     {
-
         if ((uint8_t)gcf->ascii[1] == BTL_ID_RESPONSE)
         {
             uint32_t btlVersion;
@@ -735,7 +750,9 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             get_u32_le((uint8_t*)&gcf->ascii[2], &offset);
             get_u16_le((uint8_t*)&gcf->ascii[6], &length);
 
+#ifndef NDEBUG
             UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
+#endif
 
             uint8_t *buf = (uint8_t*)&gcf->ascii[0];
             uint8_t *p = buf;
@@ -784,7 +801,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             Assert(p > buf);
             Assert(p < buf + sizeof(gcf->ascii));
 
-            PROT_SendFlagged(buf, p - buf);
+            PROT_SendFlagged(buf, (uint16_t)(p - buf));
 
             UI_UpdateProgress(gcf);
         }
@@ -912,6 +929,9 @@ int GCF_ParseFile(GCF_File *file)
     p = get_u32_le(p, &file->gcfFileSize);
     get_u8_le(p, &file->gcfCrc);
 
+
+    PL_Printf(DBG_DEBUG, "GCF header: magic: 0x%08X, type: %u, address: 0x%08X, data.size: 0x%08X\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
+
     if (magic != GCF_MAGIC)
     {
         return -2;
@@ -953,19 +973,10 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len)
 
         gcf->state(gcf, EV_RX_ASCII);
     }
-#ifndef NDEBUG
     else
     {
-        char *p = &gcf->ascii[0];
-        for (int i = 0; i < len; i++, p += 2)
-        {
-            put_hex(data[i], p);
-        }
-        *p = '\0';
-
-        UI_Printf(gcf, FMT_GREEN "recv:" FMT_RESET " %d bytes, %s\n", len, gcf->ascii);
+        gcfDebugHex(gcf, "recv", data, len);
     }
-#endif
 
     PROT_ReceiveFlagged(&gcf->rxstate, data, len);
 }
@@ -993,7 +1004,7 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
         {
             case 0x26: /* param: watchdog timeout */
             {
-                gcf->state(gcfInstance, EV_PKG_UART_RESET);
+                gcf->state(gcf, EV_PKG_UART_RESET);
             } break;
 
             default:
@@ -1006,40 +1017,36 @@ void PROT_Packet(const uint8_t *data, uint16_t len)
         {
             memcpy(&gcf->ascii[0], data, len);
             gcf->wp = len;
-            gcf->state(gcfInstance, EV_RX_BTL_PKG_DATA);
+            gcf->state(gcf, EV_RX_BTL_PKG_DATA);
         }
     }
-
 }
 
-static DeviceType gcfGetDeviceType(const char *devPath)
+static DeviceType gcfGetDeviceType(GCF *gcf)
 {
-    Assert(devPath);
+    const char *devPath = &gcf->devpath[0];
+    DeviceType result = DEV_UNKNOWN;
+    int ftype = gcf->file.gcfFileType;
 
-    if (devPath && devPath[0] != '\0')
+    if (devPath[0] != '\0')
     {
-        if (strstr(devPath, "ttyACM")) { return DEV_CONBEE_2; }
-
-        if (strstr(devPath, "ConBee_II")) { return DEV_CONBEE_2; }
-
-        if (strstr(devPath, "cu.usbmodemDE")) { return DEV_CONBEE_2; }
-
-        if (strstr(devPath, "ttyUSB")) { return DEV_CONBEE_1; }
-
-        if (strstr(devPath, "usb-FTDI")) { return DEV_CONBEE_1; }
-
-        if (strstr(devPath, "cu.usbserial")) { return DEV_CONBEE_1; }
-
-        if (strstr(devPath, "ttyAMA")) { return DEV_RASPBEE_1; }
-
-        if (strstr(devPath, "ttyAML")) { return DEV_RASPBEE_1; } /* Odroid */
-
-        if (strstr(devPath, "ttyS")) { return DEV_RASPBEE_1; }
-
-        if (strstr(devPath, "/serial")) { return DEV_RASPBEE_1; }
+        if      (strstr(devPath, "ttyACM"))        { result = DEV_CONBEE_2; }
+        else if (strstr(devPath, "ConBee_II"))     { result = DEV_CONBEE_2; }
+        else if (strstr(devPath, "cu.usbmodemDE")) { result = DEV_CONBEE_2; }
+        else if (strstr(devPath, "ttyUSB"))        { result = DEV_CONBEE_1; }
+        else if (strstr(devPath, "usb-FTDI"))      { result = DEV_CONBEE_1; }
+        else if (strstr(devPath, "cu.usbserial"))  { result = DEV_CONBEE_1; }
+        else if (strstr(devPath, "ttyAMA"))        { result = DEV_RASPBEE_1; }
+        else if (strstr(devPath, "ttyAML"))        { result = DEV_RASPBEE_1; } /* Odroid */
+        else if (strstr(devPath, "ttyS"))          { result = DEV_RASPBEE_1; }
+        else if (strstr(devPath, "/serial"))       { result = DEV_RASPBEE_1; }
     }
 
-    return DEV_UNKNOWN;
+    /* further detemine detive type from the GCF header */
+    if      (result == DEV_CONBEE_1 && ftype > 9)                   { result = DEV_UNKNOWN; }
+    else if (result == DEV_RASPBEE_2 && ftype >= 30 && ftype <= 39) { result = DEV_RASPBEE_2; }
+
+    return result;
 }
 
 
@@ -1081,6 +1088,30 @@ static void gcfPrintHelp()
     PL_Print(usage);
 }
 
+void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size)
+{
+#ifndef NDEBUG
+    char *p;
+    char buf[1024];
+
+    p = &buf[0];
+
+    Assert(size < (sizeof(buf) / 2) - 1);
+    for (unsigned i = 0; i < size; i++, p += 2)
+    {
+        put_hex(data[i], p);
+    }
+    *p = '\0';
+
+    UI_Printf(gcf, FMT_GREEN "%s:" FMT_RESET " %s (%u bytes)\n", msg, &buf[0], size);
+#else
+    (void)gcf;
+    (void)msg;
+    (void)data;
+    (void)size;
+#endif
+}
+
 static GCF_Status gcfProcessCommandline(GCF *gcf)
 {
     GCF_Status ret = GCF_FAILED;
@@ -1090,6 +1121,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     gcf->devpath[0] = '\0';
     gcf->devType = DEV_UNKNOWN;
     gcf->file.fname[0] = '\0';
+    gcf->file.gcfFileType = 0;
     gcf->file.fsize = 0;
     gcf->task = T_NONE;
 
@@ -1135,7 +1167,6 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     }
 
                     memcpy(gcf->devpath, arg, arglen + 1);
-                    gcf->devType = gcfGetDeviceType(gcf->devpath);
                 } break;
 
                 case 'f':
@@ -1221,6 +1252,8 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
             }
         }
     }
+
+    gcf->devType = gcfGetDeviceType(gcf);
 
     if (gcf->task == T_PROGRAM)
     {
