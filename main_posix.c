@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -32,12 +32,18 @@
 #include "gcf.h"
 #include "protocol.h"
 
+#define RX_BUF_SIZE 1024
+#define TX_BUF_SIZE 2048
+
 typedef struct
 {
     uint64_t timer;
     int fd;
     uint8_t running;
-    uint8_t rxbuf[64];
+    uint8_t rxbuf[RX_BUF_SIZE];
+    uint8_t txbuf[TX_BUF_SIZE];
+    uint32_t tx_rp;
+    uint32_t tx_wp;
     GCF *gcf;
 } PL_Internal;
 
@@ -175,6 +181,8 @@ GCF_Status PL_Connect(const char *path)
     }
 
     platform.fd = open(path, O_CLOEXEC | O_RDWR /*| O_NONBLOCK*/);
+    platform.tx_rp = 0;
+    platform.tx_wp = 0;
 
     if (platform.fd < 0)
     {
@@ -214,6 +222,8 @@ void PL_Disconnect()
         close(platform.fd);
         platform.fd = 0;
     }
+    platform.tx_rp = 0;
+    platform.tx_wp = 0;
     GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
 }
 
@@ -275,27 +285,80 @@ int PL_GetDevices(Device *devs, size_t max)
 
 int PROT_Write(const unsigned char *data, unsigned short len)
 {
-    if (platform.fd == 0)
-    {
-        return -1;
-    }
+    int result;
+    unsigned i;
 
-    return write(platform.fd, data, len);
+    result = 0;
+    for (i = 0; i < len; i++)
+        result += PROT_Putc(data[i]);
+
+    PROT_Flush();
+
+    return result;
 }
 
 int PROT_Putc(unsigned char ch)
 {
-    return PROT_Write(&ch, 1);
+    if (platform.fd == 0)
+        return 0;
+
+    platform.txbuf[platform.tx_wp % TX_BUF_SIZE] = ch;
+    platform.tx_wp++;
+
+    if ((platform.tx_wp % TX_BUF_SIZE) == (platform.tx_rp % TX_BUF_SIZE))
+        platform.tx_rp++; /* overwrite oldest */
+
+    return 1;
 }
 
 int PROT_Flush()
 {
+    int n;
+    unsigned pos;
+    unsigned len;
+    uint8_t buf[512];
+
     if (platform.fd == 0)
     {
+        platform.tx_wp = 0;
+        platform.tx_rp = 0;
         GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
+        return -1;
     }
 
-    return -1;
+    len = 0;
+    for (len = 0; len < sizeof(buf); len++)
+    {
+        if ((platform.tx_wp % TX_BUF_SIZE) == ((platform.tx_rp + len) % TX_BUF_SIZE))
+            break;
+        buf[len] = platform.txbuf[(platform.tx_rp + len) % TX_BUF_SIZE];
+    }
+
+    pos = 0;
+
+    for (;pos < len;)
+    {
+        n = (int)write(platform.fd, &buf[pos], len - pos);
+        if (n == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            PL_Printf(DBG_DEBUG, "write() failed: %s\n", strerror(errno));
+            break;
+        }
+        else if (n > 0 && n <= (len - pos))
+        {
+            pos += (unsigned)n;
+        }
+        else
+        {
+            break; /* should never happen */
+        }
+    }
+
+    platform.tx_rp += pos;
+
+    return (int)pos;
 }
 
 void UI_GetWinSize(uint16_t *w, uint16_t *h)
@@ -335,7 +398,7 @@ static int PL_Loop(GCF *gcf)
         /* when no device is connected, poll STDIN, to get poll() timeout */
         fds.fd = platform.fd != 0 ? platform.fd : STDIN_FILENO;
 
-        int ret = poll(&fds, 1, 1);
+        int ret = poll(&fds, 1, 5);
 
         if (ret < 0)
             break;
@@ -370,6 +433,10 @@ static int PL_Loop(GCF *gcf)
             }
         }
 
+        if (platform.fd && platform.tx_rp != platform.tx_wp)
+        {
+            PROT_Flush();
+        }
     }
 
     PL_Disconnect();
