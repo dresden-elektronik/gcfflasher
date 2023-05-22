@@ -11,7 +11,7 @@
 /* This file implements the platform independend part of GCFFlasher.
  */
 
-#define APP_VERSION "v4.0.3-beta"
+#define APP_VERSION "v4.0.4-beta"
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h> /* printf types */
@@ -359,6 +359,15 @@ static void ST_ResetUart(GCF *gcf, Event event)
         {
             gcfCommandQueryFirmwareVersion();
             gcfCommandResetUart();
+        }
+    }
+    else if (event == EV_RX_BTL_PKG_DATA)
+    {
+        if ((uint8_t)gcf->ascii[1] == BTL_ID_RESPONSE)
+        {
+            PL_ClearTimeout();
+            PL_SetTimeout(100); /* for connect bootloader */
+            gcf->state(gcf, EV_UART_RESET_SUCCESS);
         }
     }
     else if (event == EV_DISCONNECTED)
