@@ -256,6 +256,12 @@ GCF_Status PL_Connect(const char *path)
 {
     char buf[32];
 
+    if (platform.fd != INVALID_HANDLE_VALUE)
+    {
+        PL_Printf(DBG_DEBUG, "device already connected %s\n", path);
+        return GCF_SUCCESS;
+    }
+
     if (strlen(path) > 7)
     {
         return GCF_FAILED;
