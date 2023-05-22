@@ -1,4 +1,12 @@
-
+/*
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
+ * All rights reserved.
+ *
+ * The software in this package is published under the terms of the BSD
+ * style license a copy of which has been included with this distribution in
+ * the LICENSE.txt file.
+ *
+ */
 
 #pragma comment(lib, "SetupAPI.lib")
 #pragma comment(lib, "Shlwapi.lib")
@@ -42,31 +50,8 @@ static PL_Internal platform;
 
 static size_t GetComPort(const char *enumerator, Device *devs, size_t max);
 
-void *PL_Malloc(unsigned size)
-{
-    void *p = VirtualAlloc(0, size, MEM_COMMIT, PAGE_READWRITE);
-    return p;
-/*    void *p = malloc(size);
-
-    if (p)
-    {
-        ZeroMemory(p, size);
-    }
-    return p;
-    */
-}
-
-void PL_Free(void *p)
-{
-    if (p)
-    {
-        VirtualFree(p, 0, MEM_RELEASE);
-        //free(p);
-    }
-}
-
 /*! Returns a monotonic time in milliseconds. */
-uint64_t PL_Time()
+PL_time_t PL_Time()
 {
     if (platform.frequencyValid)
     {
@@ -79,20 +64,20 @@ uint64_t PL_Time()
 }
 
 /*! Lets the programm sleep for \p ms milliseconds. */
-void PL_MSleep(uint64_t ms)
+void PL_MSleep(unsigned long ms)
 {
     Sleep((DWORD)ms);
 }
 
 
 /*! Sets a timeout \p ms in milliseconds, after which a \c EV_TIMOUT event is generated. */
-void PL_SetTimeout(uint64_t ms)
+void PL_SetTimeout(unsigned long ms)
 {
     platform.timer = PL_Time() + ms;
 }
 
 /*! Clears an active timeout. */
-void PL_ClearTimeout()
+void PL_ClearTimeout(void)
 {
     platform.timer = 0;
 }
@@ -101,7 +86,7 @@ void PL_ClearTimeout()
 
    The output is used in list operation (-l).
 */
-int PL_GetDevices(Device *devs, size_t max)
+int PL_GetDevices(Device *devs, unsigned max)
 {
     // http://www.naughter.com/enumser.html
 
@@ -381,7 +366,7 @@ int PL_ResetRaspBee()
     return -1;
 }
 
-int PL_ReadFile(const char *path, uint8_t *buf, size_t buflen)
+int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen)
 {
     HANDLE hFile;
     int result = -1;
@@ -433,14 +418,14 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     va_end (args);
 }
 
-void UI_GetWinSize(uint16_t *w, uint16_t *h)
+void UI_GetWinSize(unsigned *w, unsigned *h)
 {
     // TODO
     *w = 80;
     *h = 60;
 }
 
-void UI_SetCursor(uint16_t x, uint16_t y)
+void UI_SetCursor(unsigned x, unsigned y)
 {
 
 }

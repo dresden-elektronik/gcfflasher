@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -13,13 +13,12 @@
 
 #define APP_VERSION "v4.0.4-beta"
 
-#define __STDC_FORMAT_MACROS
-#include <inttypes.h> /* printf types */
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdarg.h> /* va_list, ... */
 #include <string.h> /* memset */
 #include <assert.h>
+#include "u_strtol.h"
+#include "u_strlen.h"
 #include "buffer_helper.h"
 #include "gcf.h"
 #include "protocol.h"
@@ -72,22 +71,22 @@ typedef enum
 typedef struct GCF_File_t
 {
     char fname[MAX_DEV_PATH_LENGTH];
-    size_t fsize;
+    unsigned long fsize;
 
-    uint32_t fwVersion; /* taken from file name */
+    unsigned long fwVersion; /* taken from file name */
 
     /* parsed GCF file header */
-    uint8_t gcfFileType;
-    uint32_t gcfTargetAddress;
-    uint32_t gcfFileSize;
-    uint8_t gcfCrc;
+    unsigned char gcfFileType;
+    unsigned long gcfTargetAddress;
+    unsigned long gcfFileSize;
+    unsigned char gcfCrc;
 
-    uint8_t fcontent[MAX_GCF_FILE_SIZE];
+    unsigned char fcontent[MAX_GCF_FILE_SIZE];
 } GCF_File;
 
 typedef struct
 {
-    uint16_t length;
+    unsigned length;
     char buf[UI_MAX_LINE_LENGTH];
 } UI_Line;
 
@@ -96,27 +95,27 @@ typedef struct GCF_t
 {
     int argc;
     char **argv;
-    uint16_t wp;     /* ascii[] write pointer */
+    unsigned wp;     /* ascii[] write pointer */
     char ascii[512]; /* buffer for raw data */
     state_handler_t state;
     state_handler_t substate;
 
     /* UI line buffering */
-    uint16_t uiCurrentLine;
+    unsigned uiCurrentLine;
     UI_Line uiLines[UI_MAX_LINES];
 
     int retry;
 
-    uint32_t remaining; /* remaining bytes during upload */
+    unsigned remaining; /* remaining bytes during upload */
 
     Task task;
 
     PROT_RxState rxstate;
 
-    uint64_t startTime;
-    uint64_t maxTime;
+    PL_time_t startTime;
+    PL_time_t maxTime;
 
-    uint8_t devCount;
+    unsigned devCount;
     Device devices[MAX_DEVICES];
 
     DeviceType devType;
@@ -163,7 +162,7 @@ static void ST_ListDevices(GCF *gcf, Event event);
 static UI_Line *UI_NextLine(GCF *gcf);
 void UI_Printf(GCF *gcf, const char *format, ...);
 
-static GCF *gcfInstance = NULL;
+static GCF gcfLocal;
 
 
 static const char hex_lookup[16] =
@@ -172,7 +171,7 @@ static const char hex_lookup[16] =
     'A', 'B', 'C', 'D', 'E', 'F',
 };
 
-void put_hex(uint8_t ch, char *buf)
+void put_hex(unsigned char ch, char *buf)
 {
     buf[0] = hex_lookup[(ch >> 4) & 0xF];
     buf[1] = hex_lookup[(ch & 0x0F)];
@@ -191,9 +190,10 @@ static UI_Line *UI_NextLine(GCF *gcf)
 
 void UI_Printf(GCF *gcf, const char *format, ...)
 {
-    UI_Line *line = UI_NextLine(gcf);
-
+    UI_Line *line;
     va_list args;
+
+    line = UI_NextLine(gcf);
     va_start (args, format);
     int sz = vsnprintf(&line->buf[0], sizeof(line->buf), format, args);
     if (sz < 0 || sz > (int)sizeof(line->buf))
@@ -203,7 +203,7 @@ void UI_Printf(GCF *gcf, const char *format, ...)
     }
     else
     {
-        line->length = (uint16_t)sz;
+        line->length = (unsigned)sz;
     }
     va_end (args);
 
@@ -225,13 +225,14 @@ static void UI_UpdateProgress(GCF *gcf)
 {
     int r;
     int n;
-    uint16_t w;
-    uint16_t h;
-    uint16_t wmax;
-    uint32_t total;
+    unsigned w;
+    unsigned h;
+    unsigned wmax;
+    unsigned long total;
     int percent;
     char buf[256];
     float frac;
+    int nchars;
 
     total = gcf->file.gcfFileSize;
 
@@ -248,7 +249,7 @@ static void UI_UpdateProgress(GCF *gcf)
 
     percent = ((wmax - n) * frac) + n;
 
-    int nchars = n; // count glyphs not bytes
+    nchars = n; // count glyphs not bytes
     for (; nchars < wmax; nchars++)
     {
         if (nchars <= percent)
@@ -363,7 +364,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_RX_BTL_PKG_DATA)
     {
-        if ((uint8_t)gcf->ascii[1] == BTL_ID_RESPONSE)
+        if ((unsigned char)gcf->ascii[1] == BTL_ID_RESPONSE)
         {
             PL_ClearTimeout();
             PL_SetTimeout(100); /* for connect bootloader */
@@ -429,21 +430,25 @@ static void ST_ResetRaspBee(GCF *gcf, Event event)
 
 static void gcfGetDevices(GCF *gcf)
 {
-    int n = PL_GetDevices(&gcf->devices[0], MAX_DEVICES);
-    gcf->devCount = n > 0 ? (uint8_t)n : 0;
+    int n;
+    n = PL_GetDevices(&gcf->devices[0], MAX_DEVICES);
+    gcf->devCount = n > 0 ? (unsigned char)n : 0;
 }
 
 static void ST_ListDevices(GCF *gcf, Event event)
 {
+    Device *dev;
+    unsigned i;
+
     if (event == EV_ACTION)
     {
         gcfGetDevices(gcf);
 
         UI_Printf(gcf, "%d devices found\n", gcf->devCount);
 
-        for (unsigned i = 0; i < gcf->devCount; i++)
+        for (i = 0; i < gcf->devCount; i++)
         {
-            Device *dev = &gcf->devices[i];
+            dev = &gcf->devices[i];
             UI_Printf(gcf, "DEV [%u]: name: %s (%s),path: %s --> %s\n", i, dev->name, dev->serial, dev->path, dev->stablepath);
         }
 
@@ -514,7 +519,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             */
             UI_Printf(gcf, "query bootloader id V1\n");
 
-            uint8_t buf[2] = { 'I', 'D' };
+            unsigned char buf[2] = { 'I', 'D' };
 
             PROT_Write(buf, sizeof(buf));
             PL_SetTimeout(200);
@@ -527,7 +532,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             */
             UI_Printf(gcf, "query bootloader id V3\n");
 
-            uint8_t cmd[2] = { BTL_MAGIC, BTL_ID_REQUEST };
+            unsigned char cmd[2] = { BTL_MAGIC, BTL_ID_REQUEST };
             PROT_SendFlagged(cmd, sizeof(cmd));
             PL_SetTimeout(200);
         }
@@ -545,13 +550,13 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     }
     else if (event == EV_RX_BTL_PKG_DATA)
     {
-        if ((uint8_t)gcf->ascii[1] == BTL_ID_RESPONSE)
+        if ((unsigned char)gcf->ascii[1] == BTL_ID_RESPONSE)
         {
-            uint32_t btlVersion;
-            uint32_t appCrc;
+            unsigned long btlVersion;
+            unsigned long appCrc;
 
-            get_u32_le((uint8_t*)&gcf->ascii[2], &btlVersion);
-            get_u32_le((uint8_t*)&gcf->ascii[6], &appCrc);
+            get_u32_le((unsigned char*)&gcf->ascii[2], &btlVersion);
+            get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
 
             UI_Printf(gcf, "bootloader version 0x%08X, app crc 0x%08X\n", btlVersion, appCrc);
 
@@ -572,7 +577,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
         gcf->wp = 0;
         gcf->ascii[0] = '\0';
 
-        uint8_t buf[4] = { 0x1A, 0x1C, 0xA9, 0xAE };
+        unsigned char buf[4] = { 0x1A, 0x1C, 0xA9, 0xAE };
 
         PROT_Write(buf, sizeof(buf));
 
@@ -583,7 +588,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
         if (gcf->wp > 4 && strstr(gcf->ascii, "READY"))
         {
             PL_ClearTimeout();
-            UI_Printf(gcf, "bootloader syned: %s\n", gcf->ascii);
+            UI_Printf(gcf, "bootloader synced: %s\n", gcf->ascii);
             gcf->state = ST_V1ProgramWriteHeader;
             gcf->state(gcf, EV_ACTION);
         }
@@ -606,9 +611,9 @@ static void ST_V1ProgramWriteHeader(GCF *gcf, Event event)
         gcf->wp = 0;
         gcf->ascii[0] = '\0';
 
-        uint8_t buf[10];
+        unsigned char buf[10];
 
-        uint8_t *p = buf;
+        unsigned char *p = buf;
         p = put_u32_le(p, &gcf->file.gcfFileSize);
         p = put_u32_le(p, &gcf->file.gcfTargetAddress);
         *p++ = gcf->file.gcfFileType;
@@ -634,13 +639,13 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
             return;
         }
 
-        uint32_t pageNumber;
+        unsigned long pageNumber;
         pageNumber = gcf->ascii[4];
         pageNumber <<= 8;
         pageNumber |= gcf->ascii[3] & 0xFF;
 
-        uint8_t *page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
-        uint8_t *end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
+        unsigned char *page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
+        unsigned char *end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
 
         Assert(page < end);
         if (page >= end)
@@ -649,7 +654,7 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         }
 
         gcf->remaining = (end - page);
-        uint16_t size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
+        unsigned size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
 
         if (pageNumber % 20 == 0 || gcf->remaining < V1_PAGESIZE)
         {
@@ -710,7 +715,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
         PL_MSleep(50);
         PL_SetTimeout(1000);
 
-        uint8_t cmd[] = {
+        unsigned char cmd[] = {
             BTL_MAGIC,
             BTL_FW_UPDATE_REQUEST,
             0x00, 0x0C, 0x00, 0x00, /* data size */
@@ -719,7 +724,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
             0xAA, 0xAA, 0xAA, 0xAA  /* crc32 todo */
         };
 
-        uint8_t *p = &cmd[2];
+        unsigned char *p = &cmd[2];
 
         p = put_u32_le(p, &gcf->file.gcfFileSize);
         p = put_u32_le(p, &gcf->file.gcfTargetAddress);
@@ -730,7 +735,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_RX_BTL_PKG_DATA)
     {
-        if ((uint8_t)gcf->ascii[1] == BTL_FW_UPDATE_RESPONSE)
+        if ((unsigned char)gcf->ascii[1] == BTL_FW_UPDATE_RESPONSE)
         {
             if (gcf->ascii[2] == 0x00) /* success */
             {
@@ -753,23 +758,23 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
         {
             PL_SetTimeout(5000);
 
-            uint32_t offset;
-            uint16_t length;
+            unsigned long offset;
+            unsigned short length;
 
-            get_u32_le((uint8_t*)&gcf->ascii[2], &offset);
-            get_u16_le((uint8_t*)&gcf->ascii[6], &length);
+            get_u32_le((unsigned char*)&gcf->ascii[2], &offset);
+            get_u16_le((unsigned char*)&gcf->ascii[6], &length);
 
 #ifndef NDEBUG
             UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
 #endif
 
-            uint8_t *buf = (uint8_t*)&gcf->ascii[0];
-            uint8_t *p = buf;
+            unsigned char *buf = (unsigned char*)&gcf->ascii[0];
+            unsigned char *p = buf;
 
             *p++ = BTL_MAGIC;
             *p++ = BTL_FW_DATA_RESPONSE;
 
-            uint8_t status = 0; // success
+            unsigned char status = 0; // success
             gcf->remaining = 0;
 
             if ((offset + length) > gcf->file.gcfFileSize)
@@ -788,7 +793,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             {
                 Assert(gcf->file.gcfFileSize > offset);
                 gcf->remaining = gcf->file.gcfFileSize - offset;
-                length = length < gcf->remaining ? length : (uint16_t)gcf->remaining;
+                length = length < gcf->remaining ? length : (unsigned short)gcf->remaining;
                 Assert(length > 0);
             }
 
@@ -810,7 +815,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             Assert(p > buf);
             Assert(p < buf + sizeof(gcf->ascii));
 
-            PROT_SendFlagged(buf, (uint16_t)(p - buf));
+            PROT_SendFlagged(buf, (unsigned)(p - buf));
 
             UI_UpdateProgress(gcf);
         }
@@ -857,40 +862,28 @@ static void ST_Connected(GCF *gcf, Event event)
 
 GCF *GCF_Init(int argc, char *argv[])
 {
-    Assert(gcfInstance == NULL);
-
     GCF *gcf;
-    gcf = (GCF*)PL_Malloc(sizeof(GCF));
 
-    if (gcf)
-    {
-        gcfInstance = gcf;
-        memset(&gcf->rxstate, 0, sizeof(gcf->rxstate));
-        gcf->startTime = PL_Time();
-        gcf->maxTime = 0;
-        gcf->devCount = 0;
-        gcf->task = T_NONE;
-        gcf->state = ST_Init;
-        gcf->substate = ST_Void;
-        gcf->argc = argc;
-        gcf->argv = argv;
-        gcf->wp = 0;
-        gcf->ascii[0] = '\0';
-    }
+    gcf = &gcfLocal;
+
+    memset(&gcf->rxstate, 0, sizeof(gcf->rxstate));
+    gcf->startTime = PL_Time();
+    gcf->maxTime = 0;
+    gcf->devCount = 0;
+    gcf->task = T_NONE;
+    gcf->state = ST_Init;
+    gcf->substate = ST_Void;
+    gcf->argc = argc;
+    gcf->argv = argv;
+    gcf->wp = 0;
+    gcf->ascii[0] = '\0';
 
     return gcf;
 }
 
 void GCF_Exit(GCF *gcf)
 {
-    Assert(gcf != NULL);
-    Assert(gcfInstance != NULL);
-
-    if (gcf)
-    {
-        PL_Free(gcf);
-        gcfInstance = NULL;
-    }
+    (void)gcf;
 }
 
 void GCF_HandleEvent(GCF *gcf, Event event)
@@ -900,6 +893,10 @@ void GCF_HandleEvent(GCF *gcf, Event event)
 
 int GCF_ParseFile(GCF_File *file)
 {
+    char ch;
+    const char *version;
+    const unsigned char *p;
+
     if (file->fsize < 14)
     {
         return -1;
@@ -907,17 +904,35 @@ int GCF_ParseFile(GCF_File *file)
 
     Assert(file->fname[0] != '\0');
 
+    file->fwVersion = 0;
+
+    version = &file->fname[0];
+
+    /* parse hex number 0x26780700 */
+    for (;*version != '\0';)
     {
-        const char *version = strstr(file->fname, "0x");
-        if (version)
+        if (version[0] == '0' && version[1] == 'x')
         {
-            file->fwVersion = strtoul(version, NULL, 16);
-            Assert(file->fwVersion != 0);
+            version += 2;
+
+            for (;*version;)
+            {
+                ch = (unsigned char)*version;
+                version++;
+                if      (ch >= 'a' && ch <= 'f') { ch = ch - 'a' + 10; }
+                else if (ch >= 'A' && ch <= 'F') { ch = ch - 'A' + 10; }
+                else if (ch >= '0' && ch <= '9') { ch = ch - '0'; }
+                else    { break; }
+
+                file->fwVersion <<= 4;
+                file->fwVersion |= (unsigned char)ch;
+                file->fwVersion &= 0xFFFFFFFF;
+            }
+
+            break;
         }
-        else
-        {
-            file->fwVersion = 0;
-        }
+
+        version++;
     }
 
     /* process GCF header (14-bytes, little-endian)
@@ -929,15 +944,14 @@ int GCF_ParseFile(GCF_File *file)
        U8  checksum (Dallas CRC-8)
     */
 
-    const uint8_t *p = file->fcontent;
+    p = file->fcontent;
 
-    uint32_t magic;
+    unsigned long magic;
     p = get_u32_le(p, &magic);
     p = get_u8_le(p, &file->gcfFileType);
     p = get_u32_le(p, &file->gcfTargetAddress);
     p = get_u32_le(p, &file->gcfFileSize);
     get_u8_le(p, &file->gcfCrc);
-
 
     PL_Printf(DBG_DEBUG, "GCF header: magic: 0x%08X, type: %u, address: 0x%08X, data.size: 0x%08X\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
 
@@ -955,7 +969,7 @@ int GCF_ParseFile(GCF_File *file)
 }
 
 
-void GCF_Received(GCF *gcf, const uint8_t *data, int len)
+void GCF_Received(GCF *gcf, const unsigned char *data, int len)
 {
     Assert(len > 0);
 
@@ -990,16 +1004,18 @@ void GCF_Received(GCF *gcf, const uint8_t *data, int len)
     PROT_ReceiveFlagged(&gcf->rxstate, data, len);
 }
 
-void PROT_Packet(const uint8_t *data, uint16_t len)
+void PROT_Packet(const unsigned char *data, unsigned len)
 {
     Assert(len > 0);
 
-    GCF *gcf = gcfInstance;
+    int i;
+    char *p;
+    GCF *gcf = &gcfLocal;
 
     if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
-        char *p = &gcf->ascii[0];
-        for (int i = 0; i < len; i++, p += 2)
+        p = &gcf->ascii[0];
+        for (i = 0; i < len; i++, p += 2)
         {
             put_hex(data[i], p);
         }
@@ -1061,7 +1077,7 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
 
 static void gcfRetry(GCF *gcf)
 {
-    uint64_t now = PL_Time();
+    PL_time_t now = PL_Time();
     if (gcf->maxTime > now)
     {
         UI_Printf(gcf, "retry: %d seconds left\n", (int)(gcf->maxTime - now) / 1000);
@@ -1097,16 +1113,17 @@ static void gcfPrintHelp()
     PL_Print(usage);
 }
 
-void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size)
+void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned size)
 {
 #ifndef NDEBUG
     char *p;
     char buf[1024];
+    unsigned i;
 
     p = &buf[0];
 
     Assert(size < (sizeof(buf) / 2) - 1);
-    for (unsigned i = 0; i < size; i++, p += 2)
+    for (i = 0; i < size; i++, p += 2)
     {
         put_hex(data[i], p);
     }
@@ -1123,6 +1140,12 @@ void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size)
 
 static GCF_Status gcfProcessCommandline(GCF *gcf)
 {
+    int i;
+    int err;
+    const char *arg;
+    const char *endp;
+    unsigned long arglen;
+    long longval;
     GCF_Status ret = GCF_FAILED;
 
     gcf->state = ST_Void;
@@ -1139,9 +1162,9 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
         gcf->task = T_HELP;
     }
 
-    for (int i = 1; i < gcf->argc; i++)
+    for (i = 1; i < gcf->argc; i++)
     {
-        const char *arg = gcf->argv[i];
+        arg = gcf->argv[i];
 
         if (arg[0] == '-')
         {
@@ -1168,7 +1191,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     i++;
                     arg = gcf->argv[i];
 
-                    size_t arglen = strlen(arg);
+                    arglen = U_strlen(arg);
                     if (arglen >= sizeof(gcf->devpath))
                     {
                         PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -d\n", arg);
@@ -1191,7 +1214,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     i++;
                     arg = gcf->argv[i];
 
-                    size_t arglen = strlen(arg);
+                    arglen = U_strlen(arg);
                     if (arglen >= sizeof(gcf->file.fname))
                     {
                         PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -f\n", arg);
@@ -1234,13 +1257,15 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     i++;
                     arg = gcf->argv[i];
 
-                    gcf->maxTime = strtoul(arg, NULL, 10); /* seconds */
-                    if (gcf->maxTime > 3600)
+                    longval = U_strtol(arg, U_strlen(arg), &endp, &err); /* seconds */
+
+                    if (err || longval < 0 || longval > 3600)
                     {
                         PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -t\n", arg);
                         return GCF_FAILED;
                     }
 
+                    gcf->maxTime = longval;
                     gcf->maxTime *= 1000;
                     gcf->maxTime += gcf->startTime;
 
@@ -1337,7 +1362,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 
 static void gcfCommandResetUart()
 {
-    const uint8_t cmd[] = {
+    const unsigned char cmd[] = {
         0x0B, // command: write parmater
         0x03, // seq
         0x00, // status
@@ -1354,7 +1379,7 @@ static void gcfCommandResetUart()
 
 static void gcfCommandQueryStatus()
 {
-    const uint8_t cmd[] = {
+    const unsigned char cmd[] = {
         0x07, // command: write parmater
         0x02, // seq
         0x00, // status
@@ -1367,7 +1392,7 @@ static void gcfCommandQueryStatus()
 
 static void gcfCommandQueryFirmwareVersion()
 {
-    const uint8_t cmd[] = {
+    const unsigned char cmd[] = {
         0x0D, // command: write parmater
         0x05, // seq
         0x00, // status

@@ -2,7 +2,7 @@
 
 TARGET=GCFFlasher
 
-SRCS="main_posix.c gcf.c buffer_helper.c protocol.c"
+SRCS="main_posix.c gcf.c buffer_helper.c protocol.c u_strtol.c u_strlen.c"
 CFLAGS="-Wall"
 NEED_LIBDL=0
 DEBUG=${debug:-}
@@ -50,7 +50,7 @@ if [ "$OS" = "Linux" ]; then
 fi
 
 if [ -n "$DEBUG" ]; then
-	CFLAGS="$CFLAGS -g -O0"
+	CFLAGS="$CFLAGS -g3 -fsanitize=address,undefined"
 else
 	CFLAGS="$CFLAGS -O2 -DNDEBUG"
 fi

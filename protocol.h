@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -11,25 +11,23 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-#include <stdint.h>
-
 typedef struct {
-    uint16_t bufpos;
-    uint16_t crc;
-    uint8_t escaped;
-    uint8_t buf[256];
+    unsigned bufpos;
+    unsigned short crc;
+    unsigned char escaped;
+    unsigned char buf[256];
 } PROT_RxState;
 
 /* Platform independent declarations. */
-void PROT_SendFlagged(const uint8_t *data, uint16_t len);
-void PROT_ReceiveFlagged(PROT_RxState *rx, const uint8_t *data, uint16_t len);
-void PROT_Packet(const uint8_t *data, uint16_t len);
+void PROT_SendFlagged(const unsigned char *data, unsigned len);
+void PROT_ReceiveFlagged(PROT_RxState *rx, const unsigned char *data, unsigned len);
+void PROT_Packet(const unsigned char *data, unsigned len);
 
 /*! Platform specific declarations.
     Following functions need to be implemented in the platform layer.
  */
-int PROT_Write(const uint8_t *data, uint16_t len);
-int PROT_Putc(uint8_t ch);
+int PROT_Write(const unsigned char *data, unsigned len);
+int PROT_Putc(unsigned char ch);
 int PROT_Flush();
 
 

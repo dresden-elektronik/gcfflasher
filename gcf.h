@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -7,8 +7,6 @@
  * the LICENSE.txt file.
  *
  */
-
-#include <stdint.h>
 
 typedef enum
 {
@@ -39,39 +37,50 @@ typedef enum
 typedef struct GCF_t GCF;
 typedef struct GCF_File_t GCF_File;
 
-#define Assert(e) assert(e)
+/* TODO detect old 32-bit only compilers */
+typedef unsigned long long PL_time_t;
+
+
+#ifdef NDEBUG
+  #define Assert(c) ((void)0)
+#else
+  #if _MSC_VER
+    #define Assert(c) if (!(c)) __debugbreak()
+  #elif __GNUC__
+    #define Assert(c) if (!(c)) __builtin_trap()
+  #else
+    #define Assert ((void)0)
+  #endif
+#endif /* NDEBUG */
 
 GCF *GCF_Init(int argc, char *argv[]);
 void GCF_Exit(GCF *gcf);
 
 /*! Called from platform layer when \p data has been received, \p len must be > 0. */
-void GCF_Received(GCF *gcf, const uint8_t *data, int len);
+void GCF_Received(GCF *gcf, const unsigned char *data, int len);
 void GCF_HandleEvent(GCF *gcf, Event event);
 
 int GCF_ParseFile(GCF_File *file);
-void gcfDebugHex(GCF *gcf, const char *msg, const uint8_t *data, unsigned size);
-void put_hex(uint8_t ch, char *buf);
+void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned size);
+void put_hex(unsigned char ch, char *buf);
 
 /* Platform specific declarations.
 
    The functions prefixed with PL_ need to be implemented for a target platform.
  */
 
-void *PL_Malloc(unsigned size);
-void PL_Free(void *p);
-
 /*! Returns a monotonic time in milliseconds. */
-uint64_t PL_Time();
+PL_time_t PL_Time();
 
 /*! Lets the programm sleep for \p ms milliseconds. */
-void PL_MSleep(uint64_t ms);
+void PL_MSleep(unsigned long ms);
 
 
 /*! Sets a timeout \p ms in milliseconds, after which a \c EV_TIMOUT event is generated. */
-void PL_SetTimeout(uint64_t ms);
+void PL_SetTimeout(unsigned long ms);
 
 /*! Clears an active timeout. */
-void PL_ClearTimeout();
+void PL_ClearTimeout(void);
 
 #define MAX_DEV_NAME_LENGTH 16
 #define MAX_DEV_SERIALNR_LENGTH 16
@@ -90,7 +99,7 @@ typedef struct
 
    The output is used in list operation (-l).
 */
-int PL_GetDevices(Device *devs, size_t max);
+int PL_GetDevices(Device *devs, unsigned max);
 
 /*! Opens the serial port connection for device.
 
@@ -111,7 +120,7 @@ int PL_ResetFTDI(int num);
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
 int PL_ResetRaspBee();
 
-int PL_ReadFile(const char *path, uint8_t *buf, size_t buflen);
+int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen);
 
 
 /* Terminal printing and logging */
@@ -141,5 +150,5 @@ void PL_Print(const char *line);
 
 void PL_Printf(DebugLevel level, const char *format, ...);
 
-void UI_GetWinSize(uint16_t *w, uint16_t *h);
-void UI_SetCursor(uint16_t x, uint16_t y);
+void UI_GetWinSize(unsigned *w, unsigned *h);
+void UI_SetCursor(unsigned x, unsigned y);

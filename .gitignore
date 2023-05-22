@@ -2,3 +2,4 @@
 *.GCF
 *.exe
 GCFFlasher
+*.dSYM/
