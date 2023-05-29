@@ -2,8 +2,8 @@
 
 TARGET=GCFFlasher
 
-SRCS="main_posix.c gcf.c buffer_helper.c protocol.c u_strtol.c u_strlen.c"
-CFLAGS="-Wall"
+SRCS="main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c"
+CFLAGS="-Wall -DU_SSTREAM_NO_DEPRECATED -DAPP_VERSION=\"\"\"4.1.0-beta\"\"\""
 NEED_LIBDL=0
 DEBUG=${debug:-}
 CC=${CC:-gcc}

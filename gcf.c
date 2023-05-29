@@ -11,14 +11,17 @@
 /* This file implements the platform independend part of GCFFlasher.
  */
 
-#define APP_VERSION "v4.0.4-beta"
+#ifndef APP_VERSION /* provided by CMakeLists.txt */
+#define APP_VERSION "v0.0.0-beta"
+#endif
 
 #include <stdio.h>
 #include <stdarg.h> /* va_list, ... */
 #include <string.h> /* memset */
 #include <assert.h>
-#include "u_strtol.h"
+#include "u_sstream.h"
 #include "u_strlen.h"
+#include "u_mem.h"
 #include "buffer_helper.h"
 #include "gcf.h"
 #include "protocol.h"
@@ -136,7 +139,6 @@ static void gcfCommandQueryFirmwareVersion();
 static void ST_Void(GCF *gcf, Event event);
 static void ST_Init(GCF *gcf, Event event);
 
-
 static void ST_Program(GCF *gcf, Event event);
 static void ST_V1ProgramSync(GCF *gcf, Event event);
 static void ST_V1ProgramWriteHeader(GCF *gcf, Event event);
@@ -242,7 +244,7 @@ static void UI_UpdateProgress(GCF *gcf)
 
     wmax = w - 2 <= 80 ? w : 80; // cap line length
 
-    memset(buf, ' ', wmax);
+    U_memset(buf, ' ', wmax);
     buf[wmax] = '\0';
 
     n = sprintf(buf, " uploading ");
@@ -499,7 +501,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
         gcf->retry = 0;
         gcf->wp = 0;
         gcf->ascii[0] = '\0';
-        memset(gcf->ascii, 0, sizeof(gcf->ascii));
+        U_bzero(&gcf->ascii[0], sizeof(gcf->ascii));
 
         /* 1) wait for ConBee I and RaspBee I, which send ID on their own */
         PL_SetTimeout(200);
@@ -804,7 +806,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             if (status == 0)
             {
                 Assert(length > 0);
-                memcpy(p, &gcf->file.fcontent[GCF_HEADER_SIZE + offset], length);
+                U_memcpy(p, &gcf->file.fcontent[GCF_HEADER_SIZE + offset], length);
                 p += length;
             }
             else
@@ -866,7 +868,7 @@ GCF *GCF_Init(int argc, char *argv[])
 
     gcf = &gcfLocal;
 
-    memset(&gcf->rxstate, 0, sizeof(gcf->rxstate));
+    U_bzero(&gcf->rxstate, sizeof(gcf->rxstate));
     gcf->startTime = PL_Time();
     gcf->maxTime = 0;
     gcf->devCount = 0;
@@ -1040,7 +1042,7 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     {
         if (len < sizeof(gcf->ascii))
         {
-            memcpy(&gcf->ascii[0], data, len);
+            U_memcpy(&gcf->ascii[0], data, len);
             gcf->wp = len;
             gcf->state(gcf, EV_RX_BTL_PKG_DATA);
         }
@@ -1141,12 +1143,11 @@ void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned 
 static GCF_Status gcfProcessCommandline(GCF *gcf)
 {
     int i;
-    int err;
     const char *arg;
-    const char *endp;
     unsigned long arglen;
     long longval;
     GCF_Status ret = GCF_FAILED;
+    U_SStream ss;
 
     gcf->state = ST_Void;
     gcf->substate = ST_Void;
@@ -1198,7 +1199,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                         return GCF_FAILED;
                     }
 
-                    memcpy(gcf->devpath, arg, arglen + 1);
+                    U_memcpy(gcf->devpath, arg, arglen + 1);
                 } break;
 
                 case 'f':
@@ -1221,7 +1222,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                         return GCF_FAILED;
                     }
 
-                    memcpy(gcf->file.fname, arg, arglen + 1);
+                    U_memcpy(gcf->file.fname, arg, arglen + 1);
                     int nread = PL_ReadFile(gcf->file.fname, gcf->file.fcontent, sizeof(gcf->file.fcontent));
                     if (nread <= 0)
                     {
@@ -1257,9 +1258,11 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     i++;
                     arg = gcf->argv[i];
 
-                    longval = U_strtol(arg, U_strlen(arg), &endp, &err); /* seconds */
+                    U_sstream_init(&ss, gcf->argv[i], U_strlen(gcf->argv[i]));
 
-                    if (err || longval < 0 || longval > 3600)
+                    longval = U_sstream_get_long(&ss); /* seconds */
+
+                    if (ss.status != U_SSTREAM_OK || longval < 0 || longval > 3600)
                     {
                         PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -t\n", arg);
                         return GCF_FAILED;
@@ -1278,7 +1281,8 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     ret = GCF_SUCCESS;
                 } break;
 
-                default: {
+                default:
+                {
                     PL_Printf(DBG_INFO, "unknown option: %s\n", arg);
                     ret = GCF_FAILED;
                     return ret;
