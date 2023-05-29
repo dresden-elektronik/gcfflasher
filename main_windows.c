@@ -32,12 +32,12 @@
 
 typedef struct
 {
-    uint64_t timer;
+    PL_time_t timer;
     HANDLE fd;
     uint8_t running;
     uint8_t rxbuf[64];
     uint8_t txbuf[2048];
-    unsigned txpos;
+    size_t txpos;
 
     LARGE_INTEGER frequency;
     BOOL frequencyValid;
@@ -431,7 +431,7 @@ void UI_SetCursor(unsigned x, unsigned y)
 }
 
 
-int PROT_Write(const uint8_t *data, uint16_t len)
+int PROT_Write(const unsigned char *data, unsigned len)
 {
     if (len == 0)
         return 0;
@@ -466,7 +466,7 @@ int PROT_Write(const uint8_t *data, uint16_t len)
     return BytesWritten;
 }
 
-int PROT_Putc(uint8_t ch)
+int PROT_Putc(unsigned char ch)
 {
     Assert(platform.txpos + 1 < sizeof(platform.txbuf));
     if (platform.txpos + 1 < sizeof(platform.txbuf))
@@ -482,9 +482,9 @@ int PROT_Flush()
 {
     int result = 0;
 
-    if (platform.txpos != 0)
+    if (platform.txpos != 0 && platform.txpos < sizeof(platform.txbuf))
     {
-        result = PROT_Write(&platform.txbuf[0], platform.txpos);
+        result = PROT_Write(&platform.txbuf[0], (unsigned)platform.txpos);
         Assert(result == (int)platform.txpos); /* support/handle partial writes? */
         platform.txpos = 0;
     }

@@ -23,9 +23,9 @@ endif()
 
 if(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /utf-8 /std:c99")
+    target_sources(${PROJECT_NAME} PRIVATE main_windows.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
-
-    target_compile_definitions(${PROJECT_NAME}PRIVATE
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
                 PL_WIN=1 PL_NO_ESCASCII=1 PL_NO_UTF8=1
     )
 endif()

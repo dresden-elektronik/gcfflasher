@@ -252,7 +252,7 @@ static void UI_UpdateProgress(GCF *gcf)
     percent = ((wmax - n) * frac) + n;
 
     nchars = n; // count glyphs not bytes
-    for (; nchars < wmax; nchars++)
+    for (; nchars < (int)wmax; nchars++)
     {
         if (nchars <= percent)
             r = sprintf(&buf[n], FMT_BLOCK_DONE);
@@ -655,7 +655,7 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
             gcfRetry(gcf);
         }
 
-        gcf->remaining = (end - page);
+        gcf->remaining = (unsigned)(end - page);
         unsigned size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
 
         if (pageNumber % 20 == 0 || gcf->remaining < V1_PAGESIZE)
@@ -1017,7 +1017,7 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
         p = &gcf->ascii[0];
-        for (i = 0; i < len; i++, p += 2)
+        for (i = 0; i < (int)len; i++, p += 2)
         {
             put_hex(data[i], p);
         }

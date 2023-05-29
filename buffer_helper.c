@@ -25,10 +25,10 @@ unsigned char *put_u16_le(unsigned char *out, const unsigned short *in)
 
 unsigned char *put_u32_le(unsigned char *out, const unsigned long *in)
 {
-    *out++ = (*in & 0x000000FF) >> 0;
-    *out++ = (*in & 0x0000FF00) >> 8;
-    *out++ = (*in & 0x00FF0000) >> 16;
-    *out++ = (*in & 0xFF000000) >> 24;
+    *out++ = (unsigned char)((*in & 0x000000FF) >> 0);
+    *out++ = (unsigned char)((*in & 0x0000FF00) >> 8);
+    *out++ = (unsigned char)((*in & 0x00FF0000) >> 16);
+    *out++ = (unsigned char)((*in & 0xFF000000) >> 24);
     return out;
 }
 
