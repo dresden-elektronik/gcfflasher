@@ -8,30 +8,37 @@ target_compile_definitions(${PROJECT_NAME}
     APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
 
 if(UNIX)
-	target_sources(${PROJECT_NAME} PRIVATE main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
+    target_sources(${PROJECT_NAME} PRIVATE main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
-	if (LINUX)
-		target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX=1)
-		find_package(PkgConfig)
-		pkg_check_modules(GPIOD libgpiod)
-		if (${GPIOD_FOUND})
-			target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD)
-		endif()
-	endif()
+    if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Linux")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX=1)
+        find_package(PkgConfig)
+        pkg_check_modules(GPIOD libgpiod)
+        if (${GPIOD_FOUND})
+            target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD)
+            target_link_libraries(${PROJECT_NAME} dl)
+        endif()
+    endif()
 endif()
 
 
-if(MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /utf-8 /std:c99")
+if(WIN32)
+    if(MSVC)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /utf-8 /std:c99")
+    endif()
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
                 PL_WIN=1 PL_NO_ESCASCII=1 PL_NO_UTF8=1
     )
+    if (MINGW)
+        target_link_libraries(${PROJECT_NAME} setupapi shlwapi advapi32)
+    endif()
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS ${PROJECT_NAME})
+install(TARGETS ${PROJECT_NAME}
+       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Debian .deb specifics
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Manuel Pietschmann <mpi@dresden-elektronik.de>")

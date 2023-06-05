@@ -8,15 +8,15 @@
  *
  */
 
-#pragma comment(lib, "SetupAPI.lib")
-#pragma comment(lib, "Shlwapi.lib")
-#pragma comment(lib, "Advapi32.lib")
+#pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "advapi32.lib")
 
 //#define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <initguid.h>
-#include <Setupapi.h>
+#include <setupapi.h>
 #include <shlwapi.h>
 #include <tchar.h>
 #include <assert.h>
