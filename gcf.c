@@ -220,9 +220,10 @@ void UI_Printf(GCF *gcf, const char *format, ...)
   #define FMT_BLOCK_OPEN "."
   #define FMT_BLOCK_DONE "#"
 #else
-  #define FMT_BLOCK_OPEN "\u2591"
-  #define FMT_BLOCK_DONE "\u2593"
+  #define FMT_BLOCK_OPEN "\xE2\x96\x91" /* Light Shade U+2591 */
+  #define FMT_BLOCK_DONE "\xE2\x96\x93" /* Dark Shade U+2591 */
 #endif
+
 static void UI_UpdateProgress(GCF *gcf)
 {
     int r;
