@@ -17,8 +17,6 @@
 
 #include <stdio.h>
 #include <stdarg.h> /* va_list, ... */
-#include <string.h> /* memset */
-#include <assert.h>
 #include "u_sstream.h"
 #include "u_strlen.h"
 #include "u_mem.h"
@@ -228,48 +226,51 @@ static void UI_UpdateProgress(GCF *gcf)
 {
     int r;
     int n;
+    long percent;
+    int ndone;
+    unsigned i;
     unsigned w;
     unsigned h;
     unsigned wmax;
     unsigned long total;
-    int percent;
     char buf[256];
-    float frac;
-    int nchars;
+
+    U_SStream ss;
+
+    U_sstream_init(&ss, &buf[0], sizeof(buf));
 
     total = gcf->file.gcfFileSize;
 
     UI_GetWinSize(&w, &h);
 
-    frac = (float)(total - gcf->remaining) / (float)(total);
-
     wmax = w - 2 <= 80 ? w : 80; // cap line length
+    percent = (total - gcf->remaining) * 100 / total;
 
-    U_memset(buf, ' ', wmax);
-    buf[wmax] = '\0';
-
-    n = sprintf(buf, " uploading ");
-
-    percent = ((wmax - n) * frac) + n;
-
-    nchars = n; // count glyphs not bytes
-    for (; nchars < (int)wmax; nchars++)
-    {
-        if (nchars <= percent)
-            r = sprintf(&buf[n], FMT_BLOCK_DONE);
-        else
-            r = sprintf(&buf[n], FMT_BLOCK_OPEN);
-        n += r;
-    }
-
-    percent = (int)(100.0f * frac);
     if (percent > 95)
-    {
         percent = 100;
+
+    U_sstream_put_str(&ss, "\r ");
+
+    /* ' 100 % '   right align percent number */
+    if      (percent < 10) { U_sstream_put_str(&ss, "  "); }
+    else if (percent < 100) {U_sstream_put_str(&ss, " "); }
+
+    U_sstream_put_long(&ss, percent);
+    U_sstream_put_str(&ss, "% uploading ");
+
+    w = wmax - ss.pos - 2;
+    ndone = (total - gcf->remaining) * w / total;
+
+    for (i = 0; i < w; i++)
+    {
+        if (i <= (int)ndone)
+            U_sstream_put_str(&ss, FMT_BLOCK_DONE);
+        else
+            U_sstream_put_str(&ss, FMT_BLOCK_OPEN);
     }
 
-    r = sprintf(&buf[n], "\r %3d %%", percent);
-    Assert(r > 0);
+    for (; ss.pos < wmax;)
+        U_sstream_put_str(&ss, " ");
 
     UI_SetCursor(0, h - 1);
     PL_Print(&buf[0]);
@@ -497,6 +498,8 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
 
 static void ST_BootloaderQuery(GCF *gcf, Event event)
 {
+    U_SStream ss;
+
     if (event == EV_ACTION)
     {
         gcf->retry = 0;
@@ -542,13 +545,17 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     }
     else if (event == EV_RX_ASCII)
     {
-        if (gcf->wp > 52 && gcf->ascii[gcf->wp - 1] == '\n' && strstr(gcf->ascii, "Bootloader"))
+        if (gcf->wp > 52 && gcf->ascii[gcf->wp - 1] == '\n')
         {
-            PL_ClearTimeout();
-            UI_Printf(gcf, "bootloader detected (%u)\n", gcf->wp);
+            U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
+            if (U_sstream_find(&ss, "Bootloader"))
+            {
+                PL_ClearTimeout();
+                UI_Printf(gcf, "bootloader detected (%u)\n", gcf->wp);
 
-            gcf->state = ST_V1ProgramSync;
-            gcf->state(gcf, EV_ACTION);
+                gcf->state = ST_V1ProgramSync;
+                gcf->state(gcf, EV_ACTION);
+            }
         }
     }
     else if (event == EV_RX_BTL_PKG_DATA)
@@ -575,6 +582,8 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
 
 static void ST_V1ProgramSync(GCF *gcf, Event event)
 {
+    U_SStream ss;
+
     if (event == EV_ACTION)
     {
         gcf->wp = 0;
@@ -588,7 +597,8 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_RX_ASCII)
     {
-        if (gcf->wp > 4 && strstr(gcf->ascii, "READY"))
+        U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
+        if (gcf->wp > 4 && U_sstream_find(&ss, "READY"))
         {
             PL_ClearTimeout();
             UI_Printf(gcf, "bootloader synced: %s\n", gcf->ascii);
@@ -690,11 +700,14 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
 
 static void ST_V1ProgramValidate(GCF *gcf, Event event)
 {
+    U_SStream ss;
+
     if (event == EV_RX_ASCII)
     {
         PL_Printf(DBG_DEBUG, "VLD %s (%u)\n", gcf->ascii, gcf->wp);
+        U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
 
-        if (gcf->wp > 6 && strstr(gcf->ascii, "#VALID CRC"))
+        if (gcf->wp > 6 && U_sstream_find(&ss, "#VALID CRC"))
         {
             UI_Printf(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET, gcf->ascii);
             PL_ShutDown();
@@ -1052,22 +1065,27 @@ void PROT_Packet(const unsigned char *data, unsigned len)
 
 static DeviceType gcfGetDeviceType(GCF *gcf)
 {
-    const char *devPath = &gcf->devpath[0];
-    DeviceType result = DEV_UNKNOWN;
-    int ftype = gcf->file.gcfFileType;
+    int ftype;
+    U_SStream ss;
+    DeviceType result;
 
-    if (devPath[0] != '\0')
+    result = DEV_UNKNOWN;
+    ftype = gcf->file.gcfFileType;
+
+    if (gcf->devpath[0] != '\0')
     {
-        if      (strstr(devPath, "ttyACM"))        { result = DEV_CONBEE_2; }
-        else if (strstr(devPath, "ConBee_II"))     { result = DEV_CONBEE_2; }
-        else if (strstr(devPath, "cu.usbmodemDE")) { result = DEV_CONBEE_2; }
-        else if (strstr(devPath, "ttyUSB"))        { result = DEV_CONBEE_1; }
-        else if (strstr(devPath, "usb-FTDI"))      { result = DEV_CONBEE_1; }
-        else if (strstr(devPath, "cu.usbserial"))  { result = DEV_CONBEE_1; }
-        else if (strstr(devPath, "ttyAMA"))        { result = DEV_RASPBEE_1; }
-        else if (strstr(devPath, "ttyAML"))        { result = DEV_RASPBEE_1; } /* Odroid */
-        else if (strstr(devPath, "ttyS"))          { result = DEV_RASPBEE_1; }
-        else if (strstr(devPath, "/serial"))       { result = DEV_RASPBEE_1; }
+        U_sstream_init(&ss, &gcf->devpath[0], U_strlen(&gcf->devpath[0]));
+
+        if      (U_sstream_find(&ss, "ttyACM"))        { result = DEV_CONBEE_2; }
+        else if (U_sstream_find(&ss, "ConBee_II"))     { result = DEV_CONBEE_2; }
+        else if (U_sstream_find(&ss, "cu.usbmodemDE")) { result = DEV_CONBEE_2; }
+        else if (U_sstream_find(&ss, "ttyUSB"))        { result = DEV_CONBEE_1; }
+        else if (U_sstream_find(&ss, "usb-FTDI"))      { result = DEV_CONBEE_1; }
+        else if (U_sstream_find(&ss, "cu.usbserial"))  { result = DEV_CONBEE_1; }
+        else if (U_sstream_find(&ss, "ttyAMA"))        { result = DEV_RASPBEE_1; }
+        else if (U_sstream_find(&ss, "ttyAML"))        { result = DEV_RASPBEE_1; } /* Odroid */
+        else if (U_sstream_find(&ss, "ttyS"))          { result = DEV_RASPBEE_1; }
+        else if (U_sstream_find(&ss, "/serial"))       { result = DEV_RASPBEE_1; }
     }
 
     /* further detemine detive type from the GCF header */
@@ -1076,7 +1094,6 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
 
     return result;
 }
-
 
 static void gcfRetry(GCF *gcf)
 {
@@ -1147,6 +1164,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     const char *arg;
     unsigned long arglen;
     long longval;
+    long nread;
     GCF_Status ret = GCF_FAILED;
     U_SStream ss;
 
@@ -1224,15 +1242,15 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     }
 
                     U_memcpy(gcf->file.fname, arg, arglen + 1);
-                    int nread = PL_ReadFile(gcf->file.fname, gcf->file.fcontent, sizeof(gcf->file.fcontent));
+                    nread = (long)PL_ReadFile(gcf->file.fname, gcf->file.fcontent, sizeof(gcf->file.fcontent));
                     if (nread <= 0)
                     {
                         PL_Printf(DBG_INFO, "failed to read file: %s\n", gcf->file.fname);
                         return GCF_FAILED;
                     }
 
-                    PL_Printf(DBG_INFO, "read file success: %s (%d bytes)\n", gcf->file.fname, nread);
-                    gcf->file.fsize = (size_t)nread;
+                    PL_Printf(DBG_INFO, "read file success: %s (%ld bytes)\n", gcf->file.fname, nread);
+                    gcf->file.fsize = (unsigned long)nread;
 
                     if (GCF_ParseFile(&gcf->file) != 0)
                     {
