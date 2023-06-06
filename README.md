@@ -86,10 +86,10 @@ Visual Studio with MSVC C++ compiler needs to be installed. Tested with VS 2022 
 
 ```
 cmake -S . -B build
-cmake --build build
+cmake --build build --config Release
 ```
 
-The executable is `build\GCFFlasher4`.
+The executable is `build\Release\GCFFlasher4.exe`.
 
 ## Building on macOS
 

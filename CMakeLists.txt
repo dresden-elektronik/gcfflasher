@@ -29,14 +29,13 @@ if (WIN32)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /std:c99")
         if (MSVC_VERSION GREATER_EQUAL 1700)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
-        else()
-            target_compile_definitions(${PROJECT_NAME} PRIVATE PL_NO_UTF8=1)
         endif()
     endif()
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
                 PL_WIN=1
                 PL_NO_ESCASCII=1
+                PL_NO_UTF8=1
     )
 
     if (MINGW)
