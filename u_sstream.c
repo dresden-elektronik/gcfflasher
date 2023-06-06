@@ -176,6 +176,41 @@ int U_sstream_starts_with(U_SStream *ss, const char *str)
     return 0;
 }
 
+int U_sstream_find(U_SStream *ss, const char *str)
+{
+    unsigned i;
+    unsigned len;
+    unsigned pos;
+    unsigned match;
+
+    for (len = 0; str[len]; len++)
+        ;
+
+    pos = ss->pos;
+
+    for (; pos < ss->len && (ss->len - pos) >= len; )
+    {
+        match = 0;
+        for (i = 0; i < len; i++)
+        {
+            if (ss->str[pos + i] != str[i])
+                break;
+
+            match++;
+        }
+
+        if (match == len)
+        {
+            ss->pos = pos;
+            return 1;
+        }
+
+        pos++;
+    }
+
+    return 0;
+}
+
 void U_sstream_put_str(U_SStream *ss, const char *str)
 {
     unsigned len;

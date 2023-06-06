@@ -47,6 +47,7 @@ double U_sstream_get_double(U_SStream *ss);
 char U_sstream_peek_char(U_SStream *ss);
 void U_sstream_skip_whitespace(U_SStream *ss);
 int U_sstream_starts_with(U_SStream *ss, const char *str);
+int U_sstream_find(U_SStream *ss, const char *str);
 void U_sstream_seek(U_SStream *ss, unsigned pos);
 void U_sstream_put_str(U_SStream *ss, const char *str);
 void U_sstream_put_long(U_SStream *ss, long num);
