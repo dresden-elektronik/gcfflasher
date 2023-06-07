@@ -7,6 +7,8 @@ target_compile_definitions(${PROJECT_NAME}
     U_SSTREAM_NO_DEPRECATED
     APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
 
+option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
+
 if (UNIX)
     target_sources(${PROJECT_NAME} PRIVATE main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
@@ -26,9 +28,16 @@ if (WIN32)
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
     if (MSVC)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /std:c99")
+        target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB:libcmt")
+
+        add_compile_options(
+            $<$<CONFIG:>:/MT> #---------|
+            $<$<CONFIG:Debug>:/MTd> #---|-- Statically link the runtime libraries
+            $<$<CONFIG:Release>:/MT> #--|
+        )
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
         if (MSVC_VERSION GREATER_EQUAL 1700)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
+            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /utf-8")
         endif()
     endif()
 
@@ -38,9 +47,19 @@ if (WIN32)
                 PL_NO_UTF8=1
     )
 
-    if (MINGW)
-        target_link_libraries(${PROJECT_NAME} setupapi shlwapi advapi32)
+    if (USE_FTD2XX)
+        if ("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
+            target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/i386/ftd2xx.lib)
+        else()
+            target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/amd64/ftd2xx.lib)
+        endif()
+        target_compile_definitions(${PROJECT_NAME} PRIVATE
+                FTD2XX_STATIC
+                USE_FTD2XX
+        )
     endif()
+
+    target_link_libraries(${PROJECT_NAME} setupapi shlwapi advapi32)
 endif()
 
 include(GNUInstallDirs)

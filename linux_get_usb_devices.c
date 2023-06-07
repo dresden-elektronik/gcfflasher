@@ -57,6 +57,8 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
         const char *name = NULL;
         const char *serial = NULL;
 
+        dev->baudrate = PL_BAUDRATE_UNKNOWN;
+
         if (strstr(entry->d_name, devConBeeII))
         {
             name = devConBeeII;
@@ -64,6 +66,7 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
                                                                       ^
             */
             serial = strstr(entry->d_name, devConBeeII) + strlen(devConBeeII) + 1;
+            dev->baudrate = PL_BAUDRATE_115200;
 
         }
         else if (strstr(entry->d_name, devConBeeIFTDI))
@@ -73,6 +76,7 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
                                           ^
             */
             serial = strstr(entry->d_name, devConBeeIFTDI) + strlen(devConBeeIFTDI) + 1;
+            dev->baudrate = PL_BAUDRATE_38400;
         }
 
         if (!name)

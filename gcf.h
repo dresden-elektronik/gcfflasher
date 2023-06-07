@@ -10,22 +10,22 @@
 
 typedef enum
 {
-    EV_ACTION,
-    EV_RESET_SUCCESS,
-    EV_RESET_FAILED,
-    EV_UART_RESET_SUCCESS,
-    EV_UART_RESET_FAILED,
-    EV_FTDI_RESET_SUCCESS,
-    EV_FTDI_RESET_FAILED,
-    EV_RASPBEE_RESET_SUCCESS,
-    EV_RASPBEE_RESET_FAILED,
-    EV_PKG_UART_RESET,
-    EV_PL_STARTED,
-    EV_RX_ASCII,
-    EV_RX_BTL_PKG_DATA,
-    EV_CONNECTED,
-    EV_DISCONNECTED,
-    EV_TIMEOUT
+    EV_ACTION = 0,
+    EV_RESET_SUCCESS = 10,
+    EV_RESET_FAILED = 20,
+    EV_UART_RESET_SUCCESS = 11,
+    EV_UART_RESET_FAILED  = 21,
+    EV_FTDI_RESET_SUCCESS = 12,
+    EV_FTDI_RESET_FAILED  = 22,
+    EV_RASPBEE_RESET_SUCCESS = 13,
+    EV_RASPBEE_RESET_FAILED = 23,
+    EV_PKG_UART_RESET = 41,
+    EV_PL_STARTED = 100,
+    EV_RX_ASCII = 50,
+    EV_RX_BTL_PKG_DATA = 40,
+    EV_CONNECTED = 200,
+    EV_DISCONNECTED = 203,
+    EV_TIMEOUT = 333
 } Event;
 
 typedef enum
@@ -33,6 +33,13 @@ typedef enum
     GCF_SUCCESS,
     GCF_FAILED
 } GCF_Status;
+
+typedef enum
+{
+    PL_BAUDRATE_UNKNOWN = 0,
+    PL_BAUDRATE_38400 = 38400,
+    PL_BAUDRATE_115200 = 115200
+} PL_Baudrate;
 
 typedef struct GCF_t GCF;
 typedef struct GCF_File_t GCF_File;
@@ -83,12 +90,13 @@ void PL_SetTimeout(unsigned long ms);
 void PL_ClearTimeout(void);
 
 #define MAX_DEV_NAME_LENGTH 16
-#define MAX_DEV_SERIALNR_LENGTH 16
+#define MAX_DEV_SERIALNR_LENGTH 18
 #define MAX_DEV_PATH_LENGTH 255
 #define MAX_GCF_FILE_SIZE (1024 * 800) // 800K
 
 typedef struct
 {
+    PL_Baudrate baudrate;
     char name[MAX_DEV_NAME_LENGTH];
     char path[MAX_DEV_PATH_LENGTH];
     char serial[MAX_DEV_SERIALNR_LENGTH];
@@ -106,7 +114,7 @@ int PL_GetDevices(Device *devs, unsigned max);
     \param path - The path like /dev/ttyACM0 or COM7.
     \returns GCF_SUCCESS or GCF_FAILED
  */
-GCF_Status PL_Connect(const char *path);
+GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate);
 
 /*! Closed the serial port connection. */
 void PL_Disconnect();
@@ -115,7 +123,7 @@ void PL_Disconnect();
 void PL_ShutDown();
 
 /*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
-int PL_ResetFTDI(int num);
+int PL_ResetFTDI(int num, const char *serialnum);
 
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
 int PL_ResetRaspBee();

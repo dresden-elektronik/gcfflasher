@@ -109,8 +109,10 @@ void PL_MSleep(unsigned long ms)
     }
 }
 
-int PL_ResetFTDI(int num)
+int PL_ResetFTDI(int num, const char *serialnum)
 {
+    (void)num;
+    (void)serialnum;
 #ifdef HAS_LIBGPIOD
     return plResetFtdiLibGpiod();
 #endif
@@ -150,15 +152,16 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     va_end (args);
 }
 
-GCF_Status PL_Connect(const char *path)
+GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 {
-    int baudrate = 0;
+    int baudrate1 = 0;
 
     if (platform.fd != 0)
     {
         PL_Printf(DBG_DEBUG, "device already connected %s\n", path);
         return GCF_SUCCESS;
     }
+
 
     platform.fd = open(path, O_CLOEXEC | O_RDWR /*| O_NONBLOCK*/);
     platform.tx_rp = 0;
@@ -173,21 +176,30 @@ GCF_Status PL_Connect(const char *path)
 
     PL_Printf(DBG_DEBUG, "connected to %s\n", path);
 
-    if (baudrate == 0)
+    if (baudrate == PL_BAUDRATE_38400)
     {
-        baudrate = B38400;
+        baudrate1 = B38400;
+    }
+    else if (baudrate == PL_BAUDRATE_115200)
+    {
+        baudrate1 = B115200;
+    }
+
+    if (baudrate1 == 0)
+    {
+        baudrate1 = B38400;
 
         if (strstr(path, "ACM")) /* ConBee II Linux */
         {
-            baudrate = B115200;
+            baudrate1 = B115200;
         }
         else if (strstr(path, "cu.usbmodemDE")) /* ConBee II macOS */
         {
-            baudrate = B115200;
+            baudrate1 = B115200;
         }
     }
 
-    plSetupPort(platform.fd, baudrate);
+    plSetupPort(platform.fd, baudrate1);
 
     return GCF_SUCCESS;
 }

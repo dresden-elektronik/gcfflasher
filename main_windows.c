@@ -8,9 +8,11 @@
  *
  */
 
+/*
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "advapi32.lib")
+*/
 
 //#define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
@@ -27,6 +29,12 @@
 #include <string.h>
 
 #include "gcf.h"
+#include "u_sstream.h"
+#include "u_strlen.h"
+
+#ifdef USE_FTD2XX
+  #include "ftd2xx/ftd2xx.h"
+#endif
 
 // https://hero.handmade.network/forums/code-discussion/t/94-guide_-_how_to_avoid_c_c++_runtime_on_windows
 
@@ -48,7 +56,7 @@ typedef struct
 static PL_Internal platform;
 
 
-static size_t GetComPort(const char *enumerator, Device *devs, size_t max);
+static int GetComPort(const char *enumerator, Device *devs, size_t max);
 
 /*! Returns a monotonic time in milliseconds. */
 PL_time_t PL_Time()
@@ -73,12 +81,14 @@ void PL_MSleep(unsigned long ms)
 /*! Sets a timeout \p ms in milliseconds, after which a \c EV_TIMOUT event is generated. */
 void PL_SetTimeout(unsigned long ms)
 {
+    //PL_Printf(DBG_DEBUG, "PL_SetTimeout(%lu ms)\n", ms);
     platform.timer = PL_Time() + ms;
 }
 
 /*! Clears an active timeout. */
 void PL_ClearTimeout(void)
 {
+    //PL_Printf(DBG_DEBUG, "PL_ClearTimeout\n");
     platform.timer = 0;
 }
 
@@ -90,51 +100,43 @@ int PL_GetDevices(Device *devs, unsigned max)
 {
     // http://www.naughter.com/enumser.html
 
-    size_t result = 0;
+    int result = 0;
 
     result = GetComPort("USB", devs, max);
 
-    if (result < max)
+    if (result < (int)max)
     {
-        size_t res2 = GetComPort("FTDIBUS", devs + result, max - result);
-        if (res2 + result <= max)
+        int res2 = GetComPort("FTDIBUS", devs + result, max - result);
+        if (res2 + result <= (int)max)
         {
             result += res2;
         }
     }
 
-    return (int)result;
+    return result;
 }
 
-static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
+static int GetComPort(const char *enumerator, Device *devs, size_t max)
 {
-    size_t devcount = 0;
+    int devcount = 0;
 
     if (max == 0)
     {
         return devcount;
     }
 
+    int i;
+    char ch;
+    U_SStream ss;
     HDEVINFO DeviceInfoSet;
     DWORD DeviceIndex =0;
     SP_DEVINFO_DATA DeviceInfoData;
-    //const char *DevEnum = "USB";
-    //const char *DevEnum = "FTDIBUS";
-    //char ExpectedDeviceId[80]; //Store hardware id
     BYTE szBuffer[1024];
     DEVPROPTYPE ulPropertyType;
     DWORD dwSize = 0;
-    DWORD Error = 0;
+    DWORD dwType = 0;
     
-    //create device hardware id
-    /*
-    strcpy_s(ExpectedDeviceId, sizeof(ExpectedDeviceId), "vid_");
-    strcat_s(ExpectedDeviceId, sizeof(ExpectedDeviceId), vid);
-    strcat_s(ExpectedDeviceId, sizeof(ExpectedDeviceId), "&pid_");
-    strcat_s(ExpectedDeviceId, sizeof(ExpectedDeviceId), pid);
-    */
-    
-    //SetupDiGetClassDevs returns a handle to a device information set
+    // setupDiGetClassDevs returns a handle to a device information set
     DeviceInfoSet = SetupDiGetClassDevs(
                         NULL,
                         enumerator,
@@ -144,10 +146,10 @@ static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
     if (DeviceInfoSet == INVALID_HANDLE_VALUE)
         return devcount;
 
-    //Fills a block of memory with zeros
+    // fills a block of memory with zeros
     ZeroMemory(&DeviceInfoData, sizeof(SP_DEVINFO_DATA));
     DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-    //Receive information about an enumerated device
+    // receive information about an enumerated device
     while (SetupDiEnumDeviceInfo(
                 DeviceInfoSet,
                 DeviceIndex,
@@ -155,75 +157,112 @@ static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
     {
         DeviceIndex++;
 
-        //Retrieves a specified Plug and Play device property
-        if (SetupDiGetDeviceRegistryProperty (DeviceInfoSet, &DeviceInfoData, SPDRP_HARDWAREID,
-                                              &ulPropertyType, (BYTE*)szBuffer,
-                                              sizeof(szBuffer),   // The size, in bytes
-                                              &dwSize))
+        if (SetupDiGetDeviceInstanceId(DeviceInfoSet, &DeviceInfoData, &szBuffer[0], sizeof(szBuffer), NULL))
         {
-            HKEY hDeviceRegistryKey;
-            //Get the key
-            // HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\DeviceMigration\Devices\USB
+            U_sstream_init(&ss, &szBuffer[0], U_strlen(&szBuffer[0]));
 
-            hDeviceRegistryKey = SetupDiOpenDevRegKey(DeviceInfoSet, &DeviceInfoData,DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
-            if (hDeviceRegistryKey == INVALID_HANDLE_VALUE)
+            // USB\VID_1CF1&PID_0030\DE1995634 @ DE1995634
+            // FTDIBUS\VID_0403+PID_6015+DJ00QBWEA\0000 @ 0000
+
+            if (U_sstream_find(&ss, "VID_1CF1&PID_0030"))
             {
-                Error = GetLastError();
-                break; //Not able to open registry
+                strcpy_s(devs->name, sizeof(devs->name), "ConBee II");
+                devs->baudrate = PL_BAUDRATE_115200;
+
+            }
+            else if (U_sstream_find(&ss, "VID_0403+PID_6015"))
+            {
+                strcpy_s(devs->name, sizeof(devs->name), "ConBee I");
+                devs->baudrate = PL_BAUDRATE_38400;
             }
             else
             {
-                // Read in the name of the port
+                continue;
+            }
+
+            if (U_sstream_find(&ss, "PID_") == 0)
+                continue; /* no serial number? */
+
+            // extract serial number
+            // important: look for '+' first as the FTDI serial also contains a '\' !
+            if (U_sstream_find(&ss, "+") || U_sstream_find(&ss, "\\"))
+            {
+                ss.pos++;
+                for (i = 0; ss.pos < ss.len; ss.pos++, i++)
+                {
+                    if (i + 2 >= (int)sizeof(devs->serial))
+                        break;
+
+                    ch = ss.str[ss.pos];
+
+                    if ((ch >= 'A' && ch <= 'Z') ||
+                        (ch >= 'a' && ch <= 'z') ||
+                        (ch >= '0' && ch <= '9'))
+                    {
+                        devs->serial[i] = ch;
+                    }
+                    else
+                    {
+                        break;
+                    }
+
+                }
+
+                devs->serial[i] = '\0';
+            }
+            else
+            {
+                continue; /* no serial number? */
+            }
+        }
+        else
+        {
+            continue;
+        }
+
+        // retrieves a specified Plug and Play device property
+        if (SetupDiGetDeviceRegistryProperty (DeviceInfoSet, &DeviceInfoData, SPDRP_HARDWAREID,
+                                              &ulPropertyType, (BYTE*)szBuffer,
+                                              sizeof(szBuffer),
+                                              &dwSize))
+        {
+            HKEY hDeviceRegistryKey;
+            // get registry the key
+            // HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\DeviceMigration\Devices\USB
+
+            hDeviceRegistryKey = SetupDiOpenDevRegKey(DeviceInfoSet, &DeviceInfoData,DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
+
+            if (hDeviceRegistryKey != INVALID_HANDLE_VALUE)
+            {
+                // read name of the port
                 char pszPortName[20];
-                DWORD dwSize = sizeof(pszPortName);
-                DWORD dwType = 0;
+                dwType = 0;
+                dwSize = sizeof(pszPortName);
+
                 if ((RegQueryValueEx(hDeviceRegistryKey, "PortName", NULL, &dwType,
                     (LPBYTE) pszPortName, &dwSize) == ERROR_SUCCESS) && (dwType == REG_SZ))
                 {
                     // USB\VID_1CF1&PID_0030&REV_0100 (COM3)
-                    
 
-                    // Check if it really is a com port
+                    // is a com port?
                     if (_tcsnicmp(pszPortName, "COM", 3) == 0)
                     {
                         int nPortNr = atoi( pszPortName + 3);
                         if (nPortNr != 0)
                         {
-
-                            if (StrStrIA(szBuffer, "VID_1CF1&PID_0030"))
-                            {
-                                strcpy_s(devs->name, sizeof(devs->name), "ConBee II");                                
-                            }
-                            else if (StrStrIA(szBuffer, "VID_0403&PID_6015"))
-                            {
-                                strcpy_s(devs->name, sizeof(devs->name), "ConBee I");                                
-                            }
-                            else
-                            {
-                                strcpy_s(devs->name, sizeof(devs->name), enumerator);
-                            }
-
-                            dwSize = sizeof(szBuffer);
-                            if (RegQueryValueEx(hDeviceRegistryKey, "", NULL, &dwType,
-                    (LPBYTE) &szBuffer[0], &dwSize) == ERROR_SUCCESS)
-                            {
-                                PL_Printf(DBG_DEBUG, "--> %s (%s)\n", szBuffer, pszPortName);
-                                strcpy_s(devs->serial, sizeof(devs->serial), szBuffer);
-                            }
-
                             strcpy_s(devs->path, sizeof(devs->path), pszPortName);
                             strcpy_s(devs->stablepath, sizeof(devs->path), pszPortName);
-
                             devcount++;
                             devs++;
                         }
                     }
                 }
-                // Close the key now that we are finished with it
+
                 RegCloseKey(hDeviceRegistryKey);
             }
         }
     }
+
     if (DeviceInfoSet)
     {
         SetupDiDestroyDeviceInfoList(DeviceInfoSet);
@@ -237,7 +276,7 @@ static size_t GetComPort(const char *enumerator, Device *devs, size_t max)
     \param path - The path like /dev/ttyACM0 or COM7.
     \returns GCF_SUCCESS or GCF_FAILED
  */
-GCF_Status PL_Connect(const char *path)
+GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 {
     char buf[32];
 
@@ -247,7 +286,7 @@ GCF_Status PL_Connect(const char *path)
         return GCF_SUCCESS;
     }
 
-    if (strlen(path) > 7)
+    if (U_strlen(path) > 7)
     {
         return GCF_FAILED;
     }
@@ -296,7 +335,20 @@ GCF_Status PL_Connect(const char *path)
         printf("\nError to Get the Com state\n\n");
         goto Exit1;
     }
-    dcbSerialParams.BaudRate = CBR_115200;   //BaudRate = 115200
+
+    if (baudrate == PL_BAUDRATE_38400)
+    {
+        dcbSerialParams.BaudRate = CBR_38400;
+    }
+    else if (baudrate == PL_BAUDRATE_115200)
+    {
+        dcbSerialParams.BaudRate = CBR_115200;
+    }
+    else
+    {
+        dcbSerialParams.BaudRate = CBR_115200;
+    }
+
     dcbSerialParams.ByteSize = 8;            //ByteSize = 8
     dcbSerialParams.StopBits = ONESTOPBIT;    //StopBits = 1
     dcbSerialParams.Parity = NOPARITY;      //Parity = None
@@ -327,7 +379,7 @@ GCF_Status PL_Connect(const char *path)
         goto Exit1;
     }
 
-    PL_Printf(DBG_DEBUG, "opened com port %s\n", buf);
+    PL_Printf(DBG_DEBUG, "connected com port %s, %lu\n", buf, (unsigned long)baudrate);
 
     return GCF_SUCCESS;
 
@@ -339,6 +391,7 @@ Exit1:
 /*! Closed the serial port connection. */
 void PL_Disconnect()
 {
+    PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     if (platform.fd != INVALID_HANDLE_VALUE)
     {
         platform.txpos = 0;
@@ -355,8 +408,99 @@ void PL_ShutDown()
 }
 
 /*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
-int PL_ResetFTDI(int num)
+int PL_ResetFTDI(int num, const char *serialnum)
 {
+    PL_Printf(DBG_INFO, "Try reset [%d] %s\n", num, serialnum);
+
+
+#ifdef USE_FTD2XX
+
+    unsigned seriallen;
+    DWORD dev;
+    DWORD numDevs;
+    DWORD deviceId;
+    FT_HANDLE ftHandle;
+    FT_STATUS ftStatus;
+    FT_DEVICE device;
+    char serial[MAX_DEV_SERIALNR_LENGTH];
+    char description[64];
+    U_SStream ss;
+
+    seriallen = U_strlen(serialnum);
+
+    if (seriallen == 0) /* require serial number */
+        return -1;
+
+    U_sstream_init(&ss, (char*)serialnum, seriallen);
+
+    if (FT_Initialise() != FT_OK)
+    {
+        return -1;
+    }
+
+    if (FT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY) != FT_OK)
+    {
+        return -1;
+    }
+
+    if (numDevs == 0)
+    {
+        return -1;
+    }
+
+    for (dev = 0; dev < numDevs; dev++)
+    {
+        ftStatus = FT_Open((int)dev, &ftHandle);
+
+        if (ftStatus != FT_OK)
+            continue;
+
+        serial[0] = '\0';
+        ftStatus = FT_GetDeviceInfo(ftHandle, &device, &deviceId, serial, description, NULL);
+
+        if (ftStatus == FT_OK)
+        {
+            if (U_sstream_starts_with(&ss, &serial[0]))
+            {
+                // printf("RESET [%d] %d %s %s\n", dev, deviceId, serial, description);
+
+                UCHAR ucMask = 0xf1; // CBUS0 --> 1
+
+                /* ucMask - Required value for bit mode mask. This sets up which bits are inputs and
+                   outputs. A bit value of 0 sets the corresponding pin to an input, a bit
+                   value of 1 sets the corresponding pin to an output.
+                 */
+                ucMask = 0xf1; // CBUS0 --> 1
+                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
+                if (ftStatus != FT_OK)
+                    goto err_close;
+
+                ucMask = 0xf0;  // CBUS0 --> 0
+                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
+                if (ftStatus != FT_OK)
+                    goto err_close;
+
+                ucMask = 0xf1; // CBUS0 --> 1
+                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
+                if (ftStatus != FT_OK)
+                    goto err_close;
+
+                ftStatus = FT_SetBitMode(ftHandle, 0, FT_BITMODE_RESET);
+                if (ftStatus != FT_OK)
+                    goto err_close;
+
+                FT_Close(ftHandle);
+
+                return 0;
+            }
+        }
+
+err_close:
+        FT_Close(ftHandle);
+
+    }
+#endif /* USE_FTD2XX */
+
     return -1;
 }
 
@@ -411,6 +555,8 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     {
         return;
     }
+#else
+    (void)level;
 #endif
     va_list args;
     va_start (args, format);
@@ -427,7 +573,8 @@ void UI_GetWinSize(unsigned *w, unsigned *h)
 
 void UI_SetCursor(unsigned x, unsigned y)
 {
-
+    (void)x;
+    (void)y;
 }
 
 
