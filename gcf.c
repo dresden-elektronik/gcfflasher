@@ -323,20 +323,26 @@ static void ST_Reset(GCF *gcf, Event event)
     {
         if (gcf->devType == DEV_CONBEE_1)
         {
-            gcf->substate = ST_ResetFtdi;
-            gcf->substate(gcf, EV_ACTION);
+            if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+            {
+                gcf->substate = ST_ResetFtdi;
+                gcf->substate(gcf, EV_ACTION);
+                return;
+            }
         }
         else if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_RASPBEE_2)
         {
-            gcf->substate = ST_ResetRaspBee;
-            gcf->substate(gcf, EV_ACTION);
+            if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+            {
+                gcf->substate = ST_ResetRaspBee;
+                gcf->substate(gcf, EV_ACTION);
+                return;
+            }
         }
-        else
-        {
-            /* pretent it worked and jump to bootloader detection */
-            PL_SetTimeout(500); /* for connect bootloader */
-            GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
-        }
+
+        /* pretent it worked and jump to bootloader detection */
+        PL_SetTimeout(500); /* for connect bootloader */
+        GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
     }
     else if (event == EV_FTDI_RESET_FAILED)
     {
@@ -428,7 +434,6 @@ static void ST_ResetRaspBee(GCF *gcf, Event event)
         if (PL_ResetRaspBee() == 0)
         {
             UI_Printf(gcf, "RaspBee reset done\n");
-            PL_SetTimeout(1);
             GCF_HandleEvent(gcf, EV_RASPBEE_RESET_SUCCESS);
         }
         else

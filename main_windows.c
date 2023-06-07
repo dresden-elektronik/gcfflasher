@@ -371,7 +371,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         printf("\nError to Setting Time outs");
         goto Exit1;
     }
-    
+
     Status = SetCommMask(platform.fd, EV_RXCHAR);
     if (Status == FALSE)
     {
@@ -410,9 +410,6 @@ void PL_ShutDown()
 /*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
 int PL_ResetFTDI(int num, const char *serialnum)
 {
-    PL_Printf(DBG_INFO, "Try reset [%d] %s\n", num, serialnum);
-
-
 #ifdef USE_FTD2XX
 
     unsigned seriallen;
