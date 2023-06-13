@@ -97,7 +97,7 @@ static int query_udevadm(Device *dev, Device *end)
             n = fread(&buf[0], 1, sizeof(buf) - 1, f);
             pclose(f);
 
-            if (n > 0 && sizeof(buf) - 1)
+            if (n > 0 && n < sizeof(buf) - 1)
             {
                 buf[n] = '\0';
                 U_sstream_init(&ss, &buf[0], (unsigned)n);
