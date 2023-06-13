@@ -154,6 +154,8 @@ void PL_Printf(DebugLevel level, const char *format, ...)
 
 GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 {
+    PL_Printf(DBG_DEBUG, "PL_Connect\n");
+
     int baudrate1 = 0;
 
     if (platform.fd != 0)
@@ -161,7 +163,6 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         PL_Printf(DBG_DEBUG, "device already connected %s\n", path);
         return GCF_SUCCESS;
     }
-
 
     platform.fd = open(path, O_CLOEXEC | O_RDWR /*| O_NONBLOCK*/);
     platform.tx_rp = 0;
@@ -173,8 +174,6 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         platform.fd = 0;
         return GCF_FAILED;
     }
-
-    PL_Printf(DBG_DEBUG, "connected to %s\n", path);
 
     if (baudrate == PL_BAUDRATE_38400)
     {
@@ -201,11 +200,14 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 
     plSetupPort(platform.fd, baudrate1);
 
+    PL_Printf(DBG_DEBUG, "connected to %s, baudrate: %d\n", path, baudrate);
+
     return GCF_SUCCESS;
 }
 
 void PL_Disconnect()
 {
+    PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     if (platform.fd != 0)
     {
         close(platform.fd);
@@ -323,6 +325,8 @@ int PROT_Flush()
         buf[len] = platform.txbuf[(platform.tx_rp + len) % TX_BUF_SIZE];
     }
 
+    gcfDebugHex(platform.gcf, "send", &buf[0], len);
+
     for (pos = 0; pos < len;)
     {
         n = (int)write(platform.fd, &buf[pos], len - pos);
@@ -333,7 +337,7 @@ int PROT_Flush()
             PL_Printf(DBG_DEBUG, "write() failed: %s\n", strerror(errno));
             break;
         }
-        else if (n > 0 && n <= (len - pos))
+        else if (n > 0 && n <= (int)(len - pos))
         {
             pos += (unsigned)n;
         }

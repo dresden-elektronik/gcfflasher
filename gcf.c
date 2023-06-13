@@ -66,7 +66,8 @@ typedef enum
     DEV_RASPBEE_1,
     DEV_RASPBEE_2,
     DEV_CONBEE_1,
-    DEV_CONBEE_2
+    DEV_CONBEE_2,
+    DEV_HIVE
 } DeviceType;
 
 typedef struct GCF_File_t
@@ -370,7 +371,8 @@ static void ST_ResetUart(GCF *gcf, Event event)
 
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
         {
-            // gcfCommandQueryFirmwareVersion();
+            if (gcf->task == T_RESET)
+                gcfCommandQueryFirmwareVersion();
             gcfCommandResetUart();
         }
     }
@@ -600,7 +602,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     }
     else if (event == EV_RX_ASCII)
     {
-        if (gcf->wp > 16 && gcf->ascii[gcf->wp - 1] == '\n')
+        if (gcf->wp > 32 && gcf->ascii[gcf->wp - 1] == '\n')
         {
             U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
             if (U_sstream_find(&ss, "Bootloader"))
@@ -662,7 +664,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
         }
         else
         {
-            PL_SetTimeout(10);
+            PL_SetTimeout(500);
         }
     }
     else if (event == EV_TIMEOUT)
@@ -889,6 +891,12 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             PROT_SendFlagged(buf, (unsigned)(p - buf));
 
             UI_UpdateProgress(gcf);
+
+            if (gcf->remaining == length)
+            {
+                UI_Printf(gcf, "\nfinished\n");
+                PL_SetTimeout(500);
+            }
         }
     }
     else if (event == EV_TIMEOUT)
@@ -1087,7 +1095,7 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
                 ascii++;
 
                 /*
-                if (ch >= 0x20 && ch <= 127 || ch == '\n' || ch == '\r')
+                if ((ch >= 0x20 && ch <= 127) || ch == '\n' || ch == '\r')
                 {
                     PL_Printf(DBG_DEBUG, "%c", (char)ch);
                 }
@@ -1205,7 +1213,8 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
     }
 
     /* further detemine detive type from the GCF header */
-    if      (result == DEV_CONBEE_1 && ftype > 9)                   { result = DEV_UNKNOWN; baudrate = PL_BAUDRATE_38400; }
+    if      (ftype == 60) { result = DEV_HIVE; baudrate = PL_BAUDRATE_115200; }
+    else if (result == DEV_CONBEE_1 && ftype > 9)                   { result = DEV_UNKNOWN; baudrate = PL_BAUDRATE_38400; }
     else if (result == DEV_RASPBEE_2 && ftype >= 30 && ftype <= 39) { result = DEV_RASPBEE_2; baudrate = PL_BAUDRATE_38400; }
 
     if (gcf->devBaudrate == PL_BAUDRATE_UNKNOWN)
