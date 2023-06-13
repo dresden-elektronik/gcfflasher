@@ -27,6 +27,8 @@
 
 #include "gcf.h"
 #include "protocol.h"
+#include "u_sstream.h"
+#include "u_mem.h"
 
 #define RX_BUF_SIZE 1024
 #define TX_BUF_SIZE 2048

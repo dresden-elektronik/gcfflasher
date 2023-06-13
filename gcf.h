@@ -89,7 +89,7 @@ void PL_SetTimeout(unsigned long ms);
 /*! Clears an active timeout. */
 void PL_ClearTimeout(void);
 
-#define MAX_DEV_NAME_LENGTH 16
+#define MAX_DEV_NAME_LENGTH 32
 #define MAX_DEV_SERIALNR_LENGTH 18
 #define MAX_DEV_PATH_LENGTH 255
 #define MAX_GCF_FILE_SIZE (1024 * 800) // 800K

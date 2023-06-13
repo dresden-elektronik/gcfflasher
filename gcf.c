@@ -485,12 +485,15 @@ static void ST_ListDevices(GCF *gcf, Event event)
     {
         gcfGetDevices(gcf);
 
-        UI_Printf(gcf, "%d devices found\n", gcf->devCount);
+        if (gcf->devCount == 0)
+        {
+            UI_Printf(gcf, "no devices found\n");
+        }
 
         for (i = 0; i < gcf->devCount; i++)
         {
             dev = &gcf->devices[i];
-            UI_Printf(gcf, "DEV [%u]: name: %s (%s),path: %s --> %s\n", i, dev->name, dev->serial, dev->path, dev->stablepath);
+            UI_Printf(gcf, "%s\t%s\t%s\n", dev->path, dev->name, dev->serial);
         }
 
         PL_ShutDown();

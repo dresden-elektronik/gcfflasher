@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -8,7 +8,164 @@
  *
  */
 
+#include <stdio.h>
+#include <sys/stat.h>
 #include <dirent.h>
+
+
+/*  Query USB info via udevadm
+    This works also when /dev/by-id .. is symlinks aren't available
+
+    udevadm info --name=/dev/ttyACM0
+*/
+static int query_udevadm(Device *dev, Device *end)
+{
+    FILE *f;
+    size_t n;
+    U_SStream ss;
+    char ch;
+    char buf[4096 * 4];
+    long udevadm_version;
+    unsigned i;
+    unsigned dev_major;
+    unsigned usb_vendor;
+
+    Device *dev_cur;
+    DIR *dir;
+    struct dirent *entry;
+    struct stat statbuf;
+
+    dev_cur = dev;
+    udevadm_version = 0;
+    /* check if udevadm is available */
+    f = popen("udevadm --version", "r");
+    if (f)
+    {
+        n = fread(&buf[0], 1, sizeof(buf) - 1, f);
+        if (n > 0 && n < 10)
+        {
+            buf[n] = '\0';
+            U_sstream_init(&ss, &buf[0], (unsigned)n);
+            udevadm_version = U_sstream_get_long(&ss);
+            if (ss.status != U_SSTREAM_OK)
+                udevadm_version = 0;
+        }
+        pclose(f);
+    }
+
+    if (udevadm_version == 0)
+        return 0;
+
+    dir = opendir("/dev");
+
+    if (!dir)
+        return 0;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_type != DT_CHR)
+            continue;
+
+        if (dev_cur == end)
+            break;
+
+        U_bzero(dev_cur, sizeof(*dev_cur));
+
+        U_sstream_init(&ss, &dev_cur->path[0], sizeof(dev_cur->path));
+        U_sstream_put_str(&ss, "/dev/");
+        U_sstream_put_str(&ss, &entry->d_name[0]);
+
+        if (stat(ss.str, &statbuf) != 0)
+            continue;
+
+        dev_major = statbuf.st_rdev >> 8;
+        if (dev_major != 166 && dev_major != 188)
+            continue;
+
+        U_sstream_init(&ss, &buf[0], sizeof(buf));
+        U_sstream_put_str(&ss, "udevadm info --name=");
+        U_sstream_put_str(&ss, "/dev/");
+        U_sstream_put_str(&ss, &entry->d_name[0]);
+
+        f = popen(ss.str, "r");
+        if (f)
+        {
+            usb_vendor = 0;
+            dev_cur->serial[0] = '\0';
+            dev_cur->name[0] = '\0';
+
+            n = fread(&buf[0], 1, sizeof(buf) - 1, f);
+            pclose(f);
+
+            if (n > 0 && sizeof(buf) - 1)
+            {
+                buf[n] = '\0';
+                U_sstream_init(&ss, &buf[0], (unsigned)n);
+                while (U_sstream_find(&ss, "E: ") && U_sstream_remaining(&ss) > 8)
+                {
+                    ss.pos += 3;
+                    if (U_sstream_starts_with(&ss, "ID_USB_VENDOR_ID=") && U_sstream_find(&ss, "="))
+                    {
+                        ss.pos += 1;
+                        if      (U_sstream_starts_with(&ss, "1cf1")) { usb_vendor = 0x1cf1; }
+                        else if (U_sstream_starts_with(&ss, "0403")) { usb_vendor = 0x0403; }
+                    }
+                    else if (U_sstream_starts_with(&ss, "ID_USB_SERIAL_SHORT=") && U_sstream_find(&ss, "="))
+                    {
+                        i = 0;
+                        ss.pos += 1;
+                        dev_cur->serial[0] = '\0';
+
+                        for (;ss.pos < ss.len && i + 1 < sizeof(dev_cur->serial); ss.pos++, i++)
+                        {
+                            ch = U_sstream_peek_char(&ss);
+                            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
+                            {
+                                dev_cur->serial[i] = ch;
+                                dev_cur->serial[i + 1] = '\0';
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    else if (U_sstream_starts_with(&ss, "ID_USB_MODEL=") && U_sstream_find(&ss, "="))
+                    {
+                        i = 0;
+                        ss.pos += 1;
+                        dev_cur->name[0] = '\0';
+
+                        for (;ss.pos < ss.len && i + 1 < sizeof(dev_cur->name); ss.pos++, i++)
+                        {
+                            ch = U_sstream_peek_char(&ss);
+                            if (ch == ' ' || ch == '_' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
+                            {
+                                dev_cur->name[i] = ch;
+                                dev_cur->name[i + 1] = '\0';
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (usb_vendor && dev_cur->serial[0] && dev_cur->name[0])
+            {
+                U_memcpy(&dev_cur->stablepath[0], &dev_cur->path[0], sizeof(dev_cur->path));
+                dev_cur++;
+            }
+        }
+
+    }
+
+    closedir(dir);
+
+    return (int)(dev_cur - dev);
+}
 
 /*! Fills the \p dev array with ConBee I and II devices.
 
@@ -26,6 +183,10 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
 
     int result = 0;
     char buf[MAX_DEV_PATH_LENGTH];
+
+    result = query_udevadm(dev, end);
+    if (result > 0)
+        return result;
 
     Assert(sizeof(dev->stablepath) == sizeof(buf));
 
