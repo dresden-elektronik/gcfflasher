@@ -1250,9 +1250,13 @@ static void gcfPrintHelp()
     "GCFFlasher " APP_VERSION " copyright dresden elektronik ingenieurtechnik gmbh\n"
     "usage: GCFFlasher <options>\n"
     "options:\n"
-    " -r              force device reset without programming\n"
+    " -r              force device reboot without programming\n"
     " -f <firmware>   flash firmware file\n"
+#ifdef _WIN32
+    " -d <com port>   COM port to use, e.g. COM1\n"
+#else
     " -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee\n"
+#endif
     " -c              connect and debug serial protocol\n"
 //    " -s <serial>     serial number to use\n"
     " -t <timeout>    retry until timeout (seconds) is reached\n"

@@ -14,12 +14,13 @@
 #pragma comment(lib, "advapi32.lib")
 */
 
-//#define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <initguid.h>
 #include <setupapi.h>
 #include <shlwapi.h>
+#include <devpkey.h>
 #include <tchar.h>
 #include <assert.h>
 #include <stdio.h>
@@ -81,14 +82,12 @@ void PL_MSleep(unsigned long ms)
 /*! Sets a timeout \p ms in milliseconds, after which a \c EV_TIMOUT event is generated. */
 void PL_SetTimeout(unsigned long ms)
 {
-    //PL_Printf(DBG_DEBUG, "PL_SetTimeout(%lu ms)\n", ms);
     platform.timer = PL_Time() + ms;
 }
 
 /*! Clears an active timeout. */
 void PL_ClearTimeout(void)
 {
-    //PL_Printf(DBG_DEBUG, "PL_ClearTimeout\n");
     platform.timer = 0;
 }
 
@@ -101,16 +100,17 @@ int PL_GetDevices(Device *devs, unsigned max)
     // http://www.naughter.com/enumser.html
 
     int result = 0;
+    unsigned i = 0;
 
-    result = GetComPort("USB", devs, max);
+    ZeroMemory(devs, sizeof(*devs) * max);
 
-    if (result < (int)max)
+    GetComPort("USB", devs, max);
+    GetComPort("FTDIBUS", devs, max);
+
+    for (i = 0; i < max; i++)
     {
-        int res2 = GetComPort("FTDIBUS", devs + result, max - result);
-        if (res2 + result <= (int)max)
-        {
-            result += res2;
-        }
+        if (devs[i].serial[0] != '\0' && devs[i].path[0] != '\0')
+            result++;
     }
 
     return result;
@@ -128,13 +128,20 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
     int i;
     char ch;
     U_SStream ss;
+    Device *dev = 0;
     HDEVINFO DeviceInfoSet;
     DWORD DeviceIndex =0;
     SP_DEVINFO_DATA DeviceInfoData;
-    BYTE szBuffer[1024];
+    BYTE szBuffer[256];
+    wchar_t wcbuf[128];
     DEVPROPTYPE ulPropertyType;
     DWORD dwSize = 0;
     DWORD dwType = 0;
+    DEVPROPKEY PropertyKey;
+    DEVPROPTYPE PropertyType = 0;
+
+    unsigned vid;
+    unsigned pid;
     
     // setupDiGetClassDevs returns a handle to a device information set
     DeviceInfoSet = SetupDiGetClassDevs(
@@ -157,68 +164,173 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
     {
         DeviceIndex++;
 
+        szBuffer[0] = '\0';
+
         if (SetupDiGetDeviceInstanceId(DeviceInfoSet, &DeviceInfoData, &szBuffer[0], sizeof(szBuffer), NULL))
         {
-            U_sstream_init(&ss, &szBuffer[0], U_strlen(&szBuffer[0]));
+        }
 
-            // USB\VID_1CF1&PID_0030\DE1995634 @ DE1995634
-            // FTDIBUS\VID_0403+PID_6015+DJ00QBWEA\0000 @ 0000
+        // USB\VID_1CF1&PID_0030\DE1995634 @ DE1995634
+        // FTDIBUS\VID_0403+PID_6015+DJ00QBWEA\0000 @ 0000
+        if (szBuffer[0] == '\0')
+            continue;
 
-            if (U_sstream_find(&ss, "VID_1CF1&PID_0030"))
-            {
-                strcpy_s(devs->name, sizeof(devs->name), "ConBee II");
-                devs->baudrate = PL_BAUDRATE_115200;
+        U_sstream_init(&ss, &szBuffer[0], U_strlen(&szBuffer[0]));
 
-            }
-            else if (U_sstream_find(&ss, "VID_0403+PID_6015"))
-            {
-                strcpy_s(devs->name, sizeof(devs->name), "ConBee I");
-                devs->baudrate = PL_BAUDRATE_38400;
-            }
-            else
-            {
-                continue;
-            }
-
-            if (U_sstream_find(&ss, "PID_") == 0)
-                continue; /* no serial number? */
-
-            // extract serial number
-            // important: look for '+' first as the FTDI serial also contains a '\' !
-            if (U_sstream_find(&ss, "+") || U_sstream_find(&ss, "\\"))
-            {
-                ss.pos++;
-                for (i = 0; ss.pos < ss.len; ss.pos++, i++)
-                {
-                    if (i + 2 >= (int)sizeof(devs->serial))
-                        break;
-
-                    ch = ss.str[ss.pos];
-
-                    if ((ch >= 'A' && ch <= 'Z') ||
-                        (ch >= 'a' && ch <= 'z') ||
-                        (ch >= '0' && ch <= '9'))
-                    {
-                        devs->serial[i] = ch;
-                    }
-                    else
-                    {
-                        break;
-                    }
-
-                }
-
-                devs->serial[i] = '\0';
-            }
-            else
-            {
-                continue; /* no serial number? */
-            }
+        // filter vendor and product ids
+        if (U_sstream_find(&ss, "VID_1CF1") && U_sstream_find(&ss, "PID_0030")) // ConBee II
+        {
+            vid = 0x1cf1;
+            pid = 0x0030;
+        }
+        else if (U_sstream_find(&ss, "VID_0403") && U_sstream_find(&ss, "PID_6015")) // ConBee I and III
+        {
+            vid = 0x0403;
+            pid = 0x6015;
+        }
+        else if (U_sstream_find(&ss, "VID_1A86") && U_sstream_find(&ss, "PID_7523")) // CH340 ~ Hive
+        {
+            vid = 0x1a86;
+            pid = 0x7523;
         }
         else
         {
+
             continue;
         }
+
+        ss.pos += 8; // move behind PID_XXXX
+
+        char serial[MAX_DEV_SERIALNR_LENGTH];
+        serial[0] = '\0';
+
+        // extract serial number
+        // important: look for '+' first as the FTDI serial also contains a '\' !
+        if (U_sstream_peek_char(&ss) == '+' || U_sstream_peek_char(&ss) == '\\')
+        {
+            ss.pos++;
+            for (i = 0; ss.pos < ss.len; ss.pos++, i++)
+            {
+                if (i + 2 >= (int)sizeof(serial))
+                    break;
+
+                ch = ss.str[ss.pos];
+
+                if ((ch >= 'A' && ch <= 'Z') ||
+                    (ch >= 'a' && ch <= 'z') ||
+                    (ch >= '0' && ch <= '9'))
+                {
+                    serial[i] = ch;
+                }
+                else
+                {
+                    // for some reason FTDIBUS\VID_0403+PID_6015+DJ00QBWEA\0000
+                    // has A\0000 appended, remove here
+                    if (ch == '\\' && i != 0 && serial[i - 1] == 'A')
+                    {
+                        serial[i - 1] = '\0';
+                    }
+
+                    break;
+                }
+
+            }
+
+            serial[i] = '\0';
+        }
+        else
+        {
+            continue; /* no serial number? */
+        }
+
+        if (serial[0] == '\0')
+            continue;
+
+        dev = 0;
+
+        for (i = 0; i < max; i++)
+        {
+            U_sstream_init(&ss, devs[i].serial, U_strlen(devs[i].serial));
+
+            if (U_sstream_starts_with(&ss, serial))
+            {
+                dev = &devs[i]; // already known
+                break;
+            }
+        }
+
+        // no device with this serial yet, take a empty one
+        if (!dev)
+        {
+            for (i = 0; i < max; i++)
+            {
+                if (devs[i].serial[0] == '\0')
+                {
+                    dev = &devs[i];
+                    devcount++;
+                    U_sstream_init(&ss, dev->serial, sizeof(dev->serial));
+                    U_sstream_put_str(&ss, serial);
+                    break;
+                }
+            }
+        }
+
+        if (!dev) // all slots full
+        {
+            PL_Printf(DBG_DEBUG, "ALL SLOTS FULL\n");
+            continue;
+        }
+
+        /*** check device name (only ConBee II and ConBee III) ********************/
+        /* for ConBee III this happens when enumerator == "USB" */
+        PropertyKey = DEVPKEY_Device_BusReportedDeviceDesc;
+
+        if (SetupDiGetDevicePropertyW(DeviceInfoSet, &DeviceInfoData, &PropertyKey,
+            &PropertyType, (BYTE*)wcbuf, sizeof(wcbuf), NULL, 0))
+        {
+            if (PropertyType == DEVPROP_TYPE_STRING)
+            {
+                for (i = 0; wcbuf[i]; i++)
+                {
+                    szBuffer[i] = (BYTE)wcbuf[i]; // wchar to ASCII
+                }
+                szBuffer[i] = '\0';
+
+                // we may get here multiple times for ConBee III
+                // the generic FTDI name will be overwritten with ConBee III if not already set
+                if (dev->name[0] != 'C')
+                {
+                    for (i = 0; i < sizeof(dev->name) && szBuffer[i]; i++)
+                        dev->name[i] = szBuffer[i];
+
+                    dev->name[i] = '\0';
+
+                    U_sstream_init(&ss, dev->name, U_strlen(dev->name));
+                    if (U_sstream_starts_with(&ss, "ConBee")) // ConBee II and III
+                    {
+                        dev->baudrate = PL_BAUDRATE_115200;
+                    }
+                    else if (vid == 0x0403) // FTDI ConBee I
+                    {
+                        U_sstream_init(&ss, dev->name, sizeof(dev->name));
+                        U_sstream_put_str(&ss, "Serial FTDI");
+                        dev->baudrate = PL_BAUDRATE_38400;
+
+                    }
+                    else if (vid == 0x1a86) // CH340 Hive
+                    {
+                        U_sstream_init(&ss, dev->name, sizeof(dev->name));
+                        U_sstream_put_str(&ss, "Serial CH340");
+                        dev->baudrate = PL_BAUDRATE_38400;
+                    }
+                }
+            }
+        }
+
+        /**************************************************************************/
+
+        if (devs->name[0] == '\0')
+            continue;
 
         // retrieves a specified Plug and Play device property
         if (SetupDiGetDeviceRegistryProperty (DeviceInfoSet, &DeviceInfoData, SPDRP_HARDWAREID,
@@ -242,18 +354,14 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                 if ((RegQueryValueEx(hDeviceRegistryKey, "PortName", NULL, &dwType,
                     (LPBYTE) pszPortName, &dwSize) == ERROR_SUCCESS) && (dwType == REG_SZ))
                 {
-                    // USB\VID_1CF1&PID_0030&REV_0100 (COM3)
-
                     // is a com port?
                     if (_tcsnicmp(pszPortName, "COM", 3) == 0)
                     {
                         int nPortNr = atoi( pszPortName + 3);
                         if (nPortNr != 0)
                         {
-                            strcpy_s(devs->path, sizeof(devs->path), pszPortName);
-                            strcpy_s(devs->stablepath, sizeof(devs->path), pszPortName);
-                            devcount++;
-                            devs++;
+                            strcpy_s(dev->path, sizeof(dev->path), pszPortName);
+                            strcpy_s(dev->stablepath, sizeof(dev->path), pszPortName);
                         }
                     }
                 }
@@ -304,6 +412,8 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         return GCF_FAILED;
     }
 
+    PL_Printf(DBG_INFO, "connect %s, baudrate %d\n", buf, (int)baudrate);
+
     platform.txpos = 0;
 
     platform.fd = CreateFile(
@@ -317,6 +427,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 
     if (platform.fd == INVALID_HANDLE_VALUE)
     {
+        PL_Printf(DBG_DEBUG, "failed to open %s\n", buf);
         return GCF_FAILED;
     }
 
