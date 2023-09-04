@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -10,29 +10,30 @@
 
 #include "buffer_helper.h"
 
-uint8_t *put_u8_le(uint8_t *out, const uint8_t *in)
+unsigned char *put_u8_le(unsigned char *out, const unsigned char *in)
 {
    *out++ = *in;
    return out;
 }
 
-uint8_t *put_u16_le(uint8_t *out, const uint16_t *in)
+unsigned char *put_u16_le(unsigned char *out, const unsigned short *in)
 {
     *out++ = *in & 0x00FF;
     *out++ = (*in & 0xFF00) >> 8;
     return out;
 }
 
-uint8_t *put_u32_le(uint8_t *out, const uint32_t *in)
+unsigned char *put_u32_le(unsigned char *out, const unsigned long *in)
 {
-    *out++ = (*in & 0x000000FF) >> 0;
-    *out++ = (*in & 0x0000FF00) >> 8;
-    *out++ = (*in & 0x00FF0000) >> 16;
-    *out++ = (*in & 0xFF000000) >> 24;
+    *out++ = (unsigned char)((*in & 0x000000FF) >> 0);
+    *out++ = (unsigned char)((*in & 0x0000FF00) >> 8);
+    *out++ = (unsigned char)((*in & 0x00FF0000) >> 16);
+    *out++ = (unsigned char)((*in & 0xFF000000) >> 24);
     return out;
 }
 
-uint8_t *put_u64_le(uint8_t *out, const uint64_t *in)
+/*
+unsigned char *put_u64_le(unsigned char *out, const uint64_t *in)
 {
     *out++ = (*in & 0x00000000000000FFLLU) >> 0;
     *out++ = (*in & 0x000000000000FF00LLU) >> 8;
@@ -44,30 +45,32 @@ uint8_t *put_u64_le(uint8_t *out, const uint64_t *in)
     *out++ = (*in & 0xFF00000000000000LLU) >> 56;
     return out;
 }
+*/
 
-const uint8_t *get_u8_le(const uint8_t *in, uint8_t *out)
+const unsigned char *get_u8_le(const unsigned char *in, unsigned char *out)
 {
     *out = in[0];
-    return in + sizeof(*out);
+    return in + 1;
 }
 
-const uint8_t *get_u16_le(const uint8_t *in, uint16_t *out)
-{
-    *out = in[0];
-    *out |= in[1] << 8;
-    return in + sizeof(*out);
-}
-
-const uint8_t *get_u32_le(const uint8_t *in, uint32_t *out)
+const unsigned char *get_u16_le(const unsigned char *in, unsigned short *out)
 {
     *out = in[0];
     *out |= in[1] << 8;
-    *out |= in[2] << 16;
-    *out |= in[3] << 24;
-    return in + sizeof(*out);
+    return in + 2;
 }
 
-const uint8_t *get_u64_le(const uint8_t *in, uint64_t *out)
+const unsigned char *get_u32_le(const unsigned char *in, unsigned long *out)
+{
+    *out = in[0] & 0xFF;
+    *out |= (in[1] << 8)  & 0x0000FF00;
+    *out |= (in[2] << 16) & 0x00FF0000;
+    *out |= (in[3] << 24) & 0xFF000000;
+    return in + 4;
+}
+
+/*
+const unsigned char *get_u64_le(const unsigned char *in, uint64_t *out)
 {
     *out =  (uint64_t)in[0];
     *out |= (uint64_t)in[1] << 8;
@@ -79,3 +82,4 @@ const uint8_t *get_u64_le(const uint8_t *in, uint64_t *out)
     *out |= (uint64_t)in[7] << 56ULL;
     return in + sizeof(*out);
 }
+*/

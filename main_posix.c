@@ -8,8 +8,6 @@
  *
  */
 
-#define __STDC_FORMAT_MACROS
-#include <inttypes.h> /* printf types */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -27,23 +25,23 @@
 #include <dlfcn.h>
 #include <termios.h> /* POSIX terminal control definitions */
 
-#include <ctype.h>
-
 #include "gcf.h"
 #include "protocol.h"
+#include "u_sstream.h"
+#include "u_mem.h"
 
 #define RX_BUF_SIZE 1024
 #define TX_BUF_SIZE 2048
 
 typedef struct
 {
-    uint64_t timer;
+    PL_time_t timer;
     int fd;
-    uint8_t running;
-    uint8_t rxbuf[RX_BUF_SIZE];
-    uint8_t txbuf[TX_BUF_SIZE];
-    uint32_t tx_rp;
-    uint32_t tx_wp;
+    unsigned char running;
+    unsigned char rxbuf[RX_BUF_SIZE];
+    unsigned char txbuf[TX_BUF_SIZE];
+    unsigned tx_rp;
+    unsigned tx_wp;
     GCF *gcf;
 } PL_Internal;
 
@@ -89,11 +87,12 @@ static int plSetupPort(int fd, int baudrate)
 }
 
 /* Returns a monotonic timestamps in milliseconds */
-uint64_t PL_Time()
+PL_time_t PL_Time()
 {
+    PL_time_t res;
     struct timespec ts;
-    uint64_t res = 0;
 
+    res = 0;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
     {
         res = ts.tv_sec * 1000;
@@ -103,7 +102,7 @@ uint64_t PL_Time()
     return res;
 }
 
-void PL_MSleep(uint64_t ms)
+void PL_MSleep(unsigned long ms)
 {
     while (ms > 0)
     {
@@ -112,8 +111,10 @@ void PL_MSleep(uint64_t ms)
     }
 }
 
-int PL_ResetFTDI(int num)
+int PL_ResetFTDI(int num, const char *serialnum)
 {
+    (void)num;
+    (void)serialnum;
 #ifdef HAS_LIBGPIOD
     return plResetFtdiLibGpiod();
 #endif
@@ -131,25 +132,6 @@ int PL_ResetRaspBee()
     return plResetRaspBeeLibGpiod();
 #endif
     return -1;
-}
-
-void *PL_Malloc(unsigned size)
-{
-    void *p = malloc(size);
-
-    if (p)
-    {
-        memset(p, 0, size);
-    }
-    return p;
-}
-
-void PL_Free(void *p)
-{
-    if (p)
-    {
-        free(p);
-    }
 }
 
 void PL_Print(const char *line)
@@ -172,8 +154,12 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     va_end (args);
 }
 
-GCF_Status PL_Connect(const char *path)
+GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 {
+    PL_Printf(DBG_DEBUG, "PL_Connect\n");
+
+    int baudrate1 = 0;
+
     if (platform.fd != 0)
     {
         PL_Printf(DBG_DEBUG, "device already connected %s\n", path);
@@ -191,32 +177,39 @@ GCF_Status PL_Connect(const char *path)
         return GCF_FAILED;
     }
 
-    PL_Printf(DBG_DEBUG, "connected to %s\n", path);
-
-
-    int baudrate = 0;
-
-    if (baudrate == 0)
+    if (baudrate == PL_BAUDRATE_38400)
     {
-        baudrate = B38400;
+        baudrate1 = B38400;
+    }
+    else if (baudrate == PL_BAUDRATE_115200)
+    {
+        baudrate1 = B115200;
+    }
+
+    if (baudrate1 == 0)
+    {
+        baudrate1 = B38400;
 
         if (strstr(path, "ACM")) /* ConBee II Linux */
         {
-            baudrate = B115200;
+            baudrate1 = B115200;
         }
         else if (strstr(path, "cu.usbmodemDE")) /* ConBee II macOS */
         {
-            baudrate = B115200;
+            baudrate1 = B115200;
         }
     }
 
-    plSetupPort(platform.fd, baudrate);
+    plSetupPort(platform.fd, baudrate1);
+
+    PL_Printf(DBG_DEBUG, "connected to %s, baudrate: %d\n", path, baudrate);
 
     return GCF_SUCCESS;
 }
 
 void PL_Disconnect()
 {
+    PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     if (platform.fd != 0)
     {
         close(platform.fd);
@@ -233,13 +226,14 @@ void PL_ShutDown()
     platform.running = 0;
 }
 
-int PL_ReadFile(const char *path, uint8_t *buf, size_t buflen)
+int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen)
 {
+    int fd;
+    int ret;
+
     Assert(path && buf && buflen >= MAX_GCF_FILE_SIZE);
 
-    int fd;
-    int ret = -1;
-
+    ret = -1;
     fd = open(path, O_RDONLY);
 
     if (fd == -1)
@@ -262,17 +256,17 @@ int PL_ReadFile(const char *path, uint8_t *buf, size_t buflen)
     return ret;
 }
 
-void PL_SetTimeout(uint64_t ms)
+void PL_SetTimeout(unsigned long ms)
 {
     platform.timer = PL_Time() + ms;
 }
 
-void PL_ClearTimeout()
+void PL_ClearTimeout(void)
 {
     platform.timer = 0;
 }
 
-int PL_GetDevices(Device *devs, size_t max)
+int PL_GetDevices(Device *devs, unsigned max)
 {
     int result = 0;
 
@@ -283,7 +277,7 @@ int PL_GetDevices(Device *devs, size_t max)
     return result;
 }
 
-int PROT_Write(const unsigned char *data, unsigned short len)
+int PROT_Write(const unsigned char *data, unsigned len)
 {
     int result;
     unsigned i;
@@ -316,7 +310,7 @@ int PROT_Flush()
     int n;
     unsigned pos;
     unsigned len;
-    uint8_t buf[512];
+    unsigned char buf[512];
 
     if (platform.fd == 0)
     {
@@ -326,7 +320,6 @@ int PROT_Flush()
         return -1;
     }
 
-    len = 0;
     for (len = 0; len < sizeof(buf); len++)
     {
         if ((platform.tx_wp % TX_BUF_SIZE) == ((platform.tx_rp + len) % TX_BUF_SIZE))
@@ -334,9 +327,9 @@ int PROT_Flush()
         buf[len] = platform.txbuf[(platform.tx_rp + len) % TX_BUF_SIZE];
     }
 
-    pos = 0;
+    gcfDebugHex(platform.gcf, "send", &buf[0], len);
 
-    for (;pos < len;)
+    for (pos = 0; pos < len;)
     {
         n = (int)write(platform.fd, &buf[pos], len - pos);
         if (n == -1)
@@ -346,7 +339,7 @@ int PROT_Flush()
             PL_Printf(DBG_DEBUG, "write() failed: %s\n", strerror(errno));
             break;
         }
-        else if (n > 0 && n <= (len - pos))
+        else if (n > 0 && n <= (int)(len - pos))
         {
             pos += (unsigned)n;
         }
@@ -361,7 +354,7 @@ int PROT_Flush()
     return (int)pos;
 }
 
-void UI_GetWinSize(uint16_t *w, uint16_t *h)
+void UI_GetWinSize(unsigned *w, unsigned *h)
 {
     struct winsize size;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
@@ -373,7 +366,7 @@ void UI_GetWinSize(uint16_t *w, uint16_t *h)
 /*  Unicode box drawing chars
     https://en.wikipedia.org/wiki/Box-drawing_character
 */
-void UI_SetCursor(uint16_t x, uint16_t y)
+void UI_SetCursor(unsigned x, unsigned y)
 {
     // ESC[{line};{column}H
     char buf[24];
@@ -383,12 +376,15 @@ void UI_SetCursor(uint16_t x, uint16_t y)
 
 static int PL_Loop(GCF *gcf)
 {
+    int ret;
+    int nread;
+    struct pollfd fds;
+
     memset(&platform, 0, sizeof(platform));
     platform.gcf = gcf;
 
     platform.running = 1;
 
-    struct pollfd fds;
     fds.events = POLLIN;
 
     GCF_HandleEvent(gcf, EV_PL_STARTED);
@@ -398,7 +394,7 @@ static int PL_Loop(GCF *gcf)
         /* when no device is connected, poll STDIN, to get poll() timeout */
         fds.fd = platform.fd != 0 ? platform.fd : STDIN_FILENO;
 
-        int ret = poll(&fds, 1, 5);
+        ret = poll(&fds, 1, 5);
 
         if (ret < 0)
             break;
@@ -425,7 +421,7 @@ static int PL_Loop(GCF *gcf)
 
         if (fds.revents & POLLIN)
         {
-            int nread = read(fds.fd, platform.rxbuf, sizeof(platform.rxbuf));
+            nread = read(fds.fd, platform.rxbuf, sizeof(platform.rxbuf));
 
             if (nread > 0)
             {
@@ -446,7 +442,8 @@ static int PL_Loop(GCF *gcf)
 
 int main(int argc, char *argv[])
 {
-    GCF *gcf = GCF_Init(argc, argv);
+    GCF *gcf;
+    gcf = GCF_Init(argc, argv);
     if (gcf == NULL)
         return 2;
 

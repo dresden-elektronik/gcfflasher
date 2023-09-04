@@ -1,6 +1,6 @@
 # GCFFlasher 4
 
-GCFFlasher is the tool to program the firmware of dresden elektronik's Zigbee products.
+GCFFlasher is the tool to program the firmware of dresden elektronik Zigbee products.
 
 ## Supported Hardware
 
@@ -8,18 +8,20 @@ GCFFlasher is the tool to program the firmware of dresden elektronik's Zigbee pr
 * ConBee II
 * RaspBee I
 * RaspBee II
+* Hive
 
 ## Supported platforms
 
 The sources are POSIX compliant with a small platform specific layer, to make porting to different platforms easy.
 
-* GNU/Linux (ARM and AMD64)
+* GNU/Linux (arm, aarch64 and amd64; mips and risc should work too but aren't tested)
+* FreeBSD
 * Windows
 * macOS
 
 ## Notes
 
-* The current release is not yet included in the deCONZ package (ETA is deCONZ 2.13.x release).
+* The current release is not yet included in the deCONZ package.
 * The list command `-l` is in development and only partially implemended.
 * The output logging is not streamlined yet.
 * On macOS the `-d` parameter is `/dev/cu.usbmodemDE...` where ... is the serialnumber.
@@ -32,6 +34,7 @@ The executable can be compiled without any dependencies, but it is recommended t
 
 * A C99 compiler like GCC or Clang
 * Linux kernel version 4.8
+* CMake
 * pkg-config
 * libgpiod
 
@@ -40,31 +43,36 @@ The executable doesn't link directly to libgpiod and will check at runtime if it
 On Debian based distributions the build dependencies are installed by:
 
 ```
-apt install pkg-config build-essential libgpiod-dev
+apt install pkg-config build-essential libgpiod-dev cmake make
 ```
 
 ### Build
 
 1. Checkout this repository
 
-2. Compile the executable with the build script (with GCC)
+2. Navigate to the source directory, e.g. `cd gcfflasher` 
+
+3. Compile the executable with CMake
 
 ```
-./build_posix.sh
+cmake -S . -B build
+cmake --build build
 ```
 
-**Note:** To use a different compiler use:
+The executable is `build/GCFFlasher4`
+
+4. (optional) create a .deb package
 
 ```
-CC=clang ./build_posix.sh
+cd build
+cpack -G DEB .
 ```
 
 ## Building on Windows
 
 ### Dependencies
 
-Visual Studio with MSVC C++ compiler needs to be installed. Tested with VS 2022 but older versions should work fine as well.
-The executable has no external dependencies.
+Visual Studio with MSVC C++ compiler needs to be installed. Tested with VS 2022 but older versions should work fine as well. The executable has no external dependencies.
 
 ### Build
 
@@ -74,36 +82,45 @@ The executable has no external dependencies.
 
 3. Navigate to the source directory, e.g. `cd C:\gcfflasher` 
 
-3. Compile the executable with the build script (with MSVC)
+3. Compile the executable with CMake
 
 ```
-./build_windows.bat
+cmake -S . -B build
+cmake --build build --config Release
 ```
+
+The executable is `build\Release\GCFFlasher4.exe`.
 
 ## Building on macOS
 
 ### Dependencies
 
-The executable can be compiled without any dependencies, but it is recommended to install `libftdi` to support ConBee I.
+The executable can be compiled without any dependencies for ConBee II. To support ConBee I the library `libftdi` needs to be installed.
 
 * A C99 compiler like GCC or Clang
-* The `libftdi` development package can be installed via `brew install libftdi` via [Homebrew](https://brew.sh). 
+* CMake
+* (optional) the `libftdi` development package for ConBee I can be installed via `brew install libftdi` using [Homebrew](https://brew.sh). 
 
 ### Build
 
 1. Checkout this repository
 
-2. Compile the executable with the build script (with Clang)
+2. Navigate to the source directory, e.g. `cd gcfflasher` 
+
+3. Compile the executable with CMake
 
 ```
-CC=clang ./build_posix.sh
+cmake -S . -B build
+cmake --build build
 ```
+
+The executable is `build/GCFFlasher4`
 
 ## Run
 
 ```
-$ ./GCFFlasher
-GCFFlasher v4.0.0 copyright dresden elektronik ingenieurtechnik gmbh
+$ ./GCFFlasher4
+GCFFlasher v4.1.0 copyright dresden elektronik ingenieurtechnik gmbh
 usage: GCFFlasher <options>
 options:
  -r              force device reset without programming
@@ -121,11 +138,16 @@ options:
 
 1. Checkout this repository
 
-2. Compile the executable with the build script (with Clang)
+2. Navigate to the source directory, e.g. `cd gcfflasher` 
+
+3. Compile the executable with the build script (with Clang)
 
 ```
-CC=cc ./build_posix.sh
+cmake -S . -B build
+cmake --build build
 ```
+
+The executable is `build/GCFFlasher4`
 
 **Note:** The serial USB device for a ConBee II is `/dev/cuaU0`.
 
@@ -135,7 +157,7 @@ CC=cc ./build_posix.sh
 * Open sourced under BSD-3-Clause License
 * Doesn't require root privileges on Raspberry Pi
 * Rewritten in C instead C++
-* Smaller binary, with 25 Kb vs. previously 250 Kb on Raspberry PI
+* Smaller binary, with 25 Kb vs. previously 250 Kb + Qt libraries on Raspberry Pi
 * No Qt, libWiringPi and libft2xx (FTDI) dependencies
 * Easier to port to different platforms
 * Suitable for headless systems and standalone setup which don't use deCONZ

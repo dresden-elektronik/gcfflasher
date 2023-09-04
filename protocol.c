@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -16,7 +16,7 @@
 #define T_FR_ESC     (unsigned char)0xDD
 #define ASC_FLAG     0x01
 
-void PROT_SendFlagged(const uint8_t *data, uint16_t len)
+void PROT_SendFlagged(const unsigned char *data, unsigned len)
 {
    unsigned char c = 0;
    unsigned short i = 0;
@@ -84,7 +84,7 @@ void PROT_SendFlagged(const uint8_t *data, uint16_t len)
    PROT_Flush();
 }
 
-void PROT_ReceiveFlagged(PROT_RxState *rx, const uint8_t *data, uint16_t len)
+void PROT_ReceiveFlagged(PROT_RxState *rx, const unsigned char *data, unsigned len)
 {
 
    if (len == 0)
@@ -92,8 +92,8 @@ void PROT_ReceiveFlagged(PROT_RxState *rx, const uint8_t *data, uint16_t len)
        return;
    }
 
-   uint8_t c;
-   uint16_t pos = 0;
+   unsigned char c;
+   unsigned short pos = 0;
 
 nextTurn:
    while(pos < len)
@@ -114,7 +114,7 @@ nextTurn:
          {
             if (rx->bufpos >= 2)
             {
-               uint8_t crcvalid = 0;
+               unsigned char crcvalid = 0;
                /* Checksum bytes are added to the checksum rx->crc - substract them here */
                rx->crc -= rx->buf[rx->bufpos-1];
                rx->crc -= rx->buf[rx->bufpos-2];
@@ -128,7 +128,7 @@ nextTurn:
                if (crcvalid)
                {
 
-                 PROT_Packet(&rx->buf[0], (uint16_t)(rx->bufpos - 2));
+                 PROT_Packet(&rx->buf[0], rx->bufpos - 2);
                }
             }
             rx->bufpos = 0;

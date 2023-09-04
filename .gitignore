@@ -2,3 +2,7 @@
 *.GCF
 *.exe
 GCFFlasher
+*.dSYM/
+build/
+debout/
+linux-cross.Dockerfile

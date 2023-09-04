@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -11,15 +11,13 @@
 #ifndef BUF_HELPER_H
 #define BUF_HELPER_H
 
-#include <stdint.h>
-
-uint8_t *put_u8_le(uint8_t *out, const uint8_t *in);
-uint8_t *put_u16_le(uint8_t *out, const uint16_t *in);
-uint8_t *put_u32_le(uint8_t *out, const uint32_t *in);
-uint8_t *put_u64_le(uint8_t *out, const uint64_t *in);
-const uint8_t *get_u8_le(const uint8_t *in, uint8_t *out);
-const uint8_t *get_u16_le(const uint8_t *in, uint16_t *out);
-const uint8_t *get_u32_le(const uint8_t *in, uint32_t *out);
-const uint8_t *get_u64_le(const uint8_t *in, uint64_t *out);
+unsigned char *put_u8_le(unsigned char *out, const unsigned char *in);
+unsigned char *put_u16_le(unsigned char *out, const unsigned short *in);
+unsigned char *put_u32_le(unsigned char *out, const unsigned long *in);
+/*unsigned char *put_u64_le(unsigned char *out, const uint64_t *in);*/
+const unsigned char *get_u8_le(const unsigned char *in, unsigned char *out);
+const unsigned char *get_u16_le(const unsigned char *in, unsigned short *out);
+const unsigned char *get_u32_le(const unsigned char *in, unsigned long *out);
+/*const unsigned char *get_u64_le(const unsigned char *in, uint64_t *out);*/
 
 #endif /* BUF_HELPER_H */
