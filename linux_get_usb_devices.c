@@ -149,6 +149,20 @@ static int query_udevadm(Device *dev, Device *end)
                                 break;
                             }
                         }
+
+                        {
+                            U_SStream s2;
+                            U_sstream_init(&s2, dev_cur->name, i);
+
+                            if (U_sstream_starts_with(&s2, "ConBee_III"))
+                            {
+                                dev_cur->baudrate = PL_BAUDRATE_115200;
+                            }
+                            else if (U_sstream_starts_with(&s2, "ConBee_II"))
+                            {
+                                dev_cur->baudrate = PL_BAUDRATE_115200;
+                            }
+                        }
                     }
                 }
             }
@@ -200,6 +214,7 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
     }
 
     const char *devConBeeII = "ConBee_II"; /* usb-dresden_elektronik_ingenieurtechnik_GmbH_ConBee_II_DE1948474-if00 */
+    const char *devConBeeIII = "ConBee_III"; /* usb-dresden_elektronik_ConBee_III_DEDEADAFFE-if00-port0 */
     const char *devConBeeIFTDI = "FT230X_Basic_UART"; /* usb-FTDI_FT230X_Basic_UART_DJ00QBWE-if00-port0 */
     const char *devConBeeI = "ConBee";
 
@@ -227,6 +242,16 @@ static int plGetLinuxUSBDevices(Device *dev, Device *end)
                                                                       ^
             */
             serial = strstr(entry->d_name, devConBeeII) + strlen(devConBeeII) + 1;
+            dev->baudrate = PL_BAUDRATE_115200;
+
+        }
+        else if (strstr(entry->d_name, devConBeeIII))
+        {
+            name = devConBeeIII;
+            /* usb-dresden_elektronik_ConBee_III_DEDEADAFFE-if00-port0
+                                                 ^
+            */
+            serial = strstr(entry->d_name, devConBeeIII) + strlen(devConBeeIII) + 1;
             dev->baudrate = PL_BAUDRATE_115200;
 
         }
