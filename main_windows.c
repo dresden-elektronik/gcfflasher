@@ -321,7 +321,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                     {
                         U_sstream_init(&ss, dev->name, sizeof(dev->name));
                         U_sstream_put_str(&ss, "Serial CH340");
-                        dev->baudrate = PL_BAUDRATE_38400;
+                        dev->baudrate = PL_BAUDRATE_115200;
                     }
                 }
             }
