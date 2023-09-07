@@ -109,6 +109,7 @@ static int query_udevadm(Device *dev, Device *end)
                         ss.pos += 1;
                         if      (U_sstream_starts_with(&ss, "1cf1")) { usb_vendor = 0x1cf1; }
                         else if (U_sstream_starts_with(&ss, "0403")) { usb_vendor = 0x0403; }
+                        else if (U_sstream_starts_with(&ss, "1a86")) { usb_vendor = 0x1a86; }
                     }
                     else if (U_sstream_starts_with(&ss, "ID_USB_SERIAL_SHORT=") && U_sstream_find(&ss, "="))
                     {
@@ -164,6 +165,17 @@ static int query_udevadm(Device *dev, Device *end)
                             }
                         }
                     }
+                }
+            }
+
+            if (usb_vendor == 0x1a86)
+            {
+                dev_cur->baudrate = PL_BAUDRATE_115200;
+                if (dev_cur->serial[0] == '\0')
+                {
+                    /* the CH340 chips don't have a serial? */
+                    dev_cur->serial[0] = '1';
+                    dev_cur->serial[1] = '\0';
                 }
             }
 
