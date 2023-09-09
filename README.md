@@ -6,6 +6,7 @@ GCFFlasher is the tool to program the firmware of dresden elektronik Zigbee prod
 
 * ConBee I
 * ConBee II
+* ConBee III
 * RaspBee I
 * RaspBee II
 * Hive
@@ -55,7 +56,7 @@ apt install pkg-config build-essential libgpiod-dev cmake make
 3. Compile the executable with CMake
 
 ```
-cmake -S . -B build
+cmake -B build .
 cmake --build build
 ```
 
@@ -85,7 +86,7 @@ Visual Studio with MSVC C++ compiler needs to be installed. Tested with VS 2022 
 3. Compile the executable with CMake
 
 ```
-cmake -S . -B build
+cmake -B build .
 cmake --build build --config Release
 ```
 
@@ -110,7 +111,7 @@ The executable can be compiled without any dependencies for ConBee II. To suppor
 3. Compile the executable with CMake
 
 ```
-cmake -S . -B build
+cmake -B build .
 cmake --build build
 ```
 
@@ -143,7 +144,7 @@ options:
 3. Compile the executable with the build script (with Clang)
 
 ```
-cmake -S . -B build
+cmake -B build .
 cmake --build build
 ```
 
