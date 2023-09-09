@@ -14,9 +14,15 @@ if (UNIX)
 
     if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Linux")
         target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX=1)
+        target_sources(${PROJECT_NAME}
+                PRIVATE
+                linux_get_usb_devices.c
+                linux_libgpiod_reset.c)
+
         find_package(PkgConfig)
         pkg_check_modules(GPIOD libgpiod)
         if (${GPIOD_FOUND})
+
             target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD)
             target_link_libraries(${PROJECT_NAME} dl)
         endif()

@@ -9,15 +9,11 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <stdarg.h> /* va_list, ... */
-#include <assert.h>
-#include <limits.h>
 #include <poll.h>
 #include <fcntl.h> /* open() */
 #include <unistd.h> /* close() */
-#include <sys/types.h>
+//#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <time.h>
 #include <string.h> /* memset() */
@@ -27,8 +23,6 @@
 
 #include "gcf.h"
 #include "protocol.h"
-#include "u_sstream.h"
-#include "u_mem.h"
 
 #define RX_BUF_SIZE 1024
 #define TX_BUF_SIZE 2048
@@ -48,8 +42,13 @@ typedef struct
 static PL_Internal platform;
 
 #ifdef PL_LINUX
-  #include "linux_get_usb_devices.c"
-  #include "linux_libgpiod_reset.c"
+int plGetLinuxUSBDevices(Device *dev, Device *end);
+
+#ifdef HAS_LIBGPIOD
+int plResetRaspBeeLibGpiod(void);
+int plResetFtdiLibGpiod(void);
+#endif
+
 #endif
 
 #ifdef PL_MAC
@@ -59,7 +58,6 @@ static PL_Internal platform;
 static int plSetupPort(int fd, int baudrate)
 {
     struct termios options;
-
 
     fcntl(fd, F_SETFL, O_RDWR | /*O_NONBLOCK |*/ O_NOCTTY);
 
@@ -136,7 +134,7 @@ int PL_ResetRaspBee()
 
 void PL_Print(const char *line)
 {
-    int n = write(STDOUT_FILENO, line, strlen(line));
+    ssize_t n = write(STDOUT_FILENO, line, strlen(line));
     (void)n;
 }
 
@@ -147,6 +145,8 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     {
         return;
     }
+#else
+    (void)level;
 #endif
     va_list args;
     va_start (args, format);
@@ -242,7 +242,7 @@ int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen)
         return ret;
     }
 
-    ret = read(fd, buf, buflen);
+    ret = (int)read(fd, buf, buflen);
     if (ret == -1)
     {
         PL_Printf(DBG_DEBUG, "failed to read %s, err: %s\n", path, strerror(errno));
@@ -421,7 +421,7 @@ static int PL_Loop(GCF *gcf)
 
         if (fds.revents & POLLIN)
         {
-            nread = read(fds.fd, platform.rxbuf, sizeof(platform.rxbuf));
+            nread = (int)read(fds.fd, platform.rxbuf, sizeof(platform.rxbuf));
 
             if (nread > 0)
             {

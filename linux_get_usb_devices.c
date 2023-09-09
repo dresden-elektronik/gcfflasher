@@ -11,6 +11,12 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include "gcf.h"
+#include "u_sstream.h"
+#include "u_mem.h"
 
 
 /*  Query USB info via udevadm
@@ -200,7 +206,7 @@ static int query_udevadm(Device *dev, Device *end)
 
 	\returns The number of devices placed in the array.
  */
-static int plGetLinuxUSBDevices(Device *dev, Device *end)
+int plGetLinuxUSBDevices(Device *dev, Device *end)
 {
     Assert(dev < end);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -9,8 +9,10 @@
  */
 
 #ifdef HAS_LIBGPIOD
-
+#include <dlfcn.h>
 #include <gpiod.h>
+#include <string.h>
+#include "gcf.h"
 
 /*
    /sys/bus/usb/drivers/cdc_acm
@@ -41,10 +43,10 @@ static pl_gpiod_line_request_input  fn_gpiod_line_request_input;
 static pl_gpiod_line_set_value       fn_gpiod_line_set_value;
 static pl_gpiod_line_release         fn_gpiod_line_release;
 
-static int plLoadLibGpiod();
-static int plUnloadLibGpiod();
+static int plLoadLibGpiod(void);
+static int plUnloadLibGpiod(void);
 
-static int plLoadLibGpiod()
+static int plLoadLibGpiod(void)
 {
     Assert(lib_gpiod_handle == NULL);
 
@@ -84,7 +86,7 @@ static int plLoadLibGpiod()
     return 0;
 }
 
-static int plUnloadLibGpiod()
+static int plUnloadLibGpiod(void)
 {
     Assert(lib_gpiod_handle != NULL);
 
@@ -108,7 +110,7 @@ static int plUnloadLibGpiod()
     return -1;
 }
 
-int plResetRaspBeeLibGpiod()
+int plResetRaspBeeLibGpiod(void)
 {
     int ret = -1;
     struct gpiod_chip *chip;
@@ -181,7 +183,7 @@ int plResetRaspBeeLibGpiod()
     return ret;
 }
 
-static int plResetFtdiLibGpiod()
+int plResetFtdiLibGpiod(void)
 {
     int ret = -1;
     struct gpiod_chip *chip;
