@@ -713,9 +713,9 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         }
 
         unsigned long pageNumber;
-        pageNumber = gcf->ascii[4];
+        pageNumber = (unsigned char)gcf->ascii[4];
         pageNumber <<= 8;
-        pageNumber |= gcf->ascii[3] & 0xFF;
+        pageNumber |= (unsigned char)(gcf->ascii[3] & 0xFF);
 
         unsigned char *page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
         unsigned char *end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
@@ -994,7 +994,7 @@ void GCF_HandleEvent(GCF *gcf, Event event)
 
 int GCF_ParseFile(GCF_File *file)
 {
-    char ch;
+    unsigned char ch;
     const char *version;
     const unsigned char *p;
 
@@ -1093,7 +1093,7 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
 
             if (gcf->wp < sizeof(gcf->ascii) - 2)
             {
-                gcf->ascii[gcf->wp++] = ch;
+                gcf->ascii[gcf->wp++] = (char)ch;
                 gcf->ascii[gcf->wp] = '\0';
                 ascii++;
 
@@ -1441,8 +1441,8 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 {
                     PL_Printf(DBG_INFO, "unknown option: %s\n", arg);
                     ret = GCF_FAILED;
-                    return ret;
-                } break;
+
+                } return ret;
             }
         }
     }
