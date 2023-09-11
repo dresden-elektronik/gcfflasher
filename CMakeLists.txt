@@ -4,7 +4,6 @@ project (GCFFlasher VERSION 4.2.2)
 add_executable(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME}
     PUBLIC
-    U_SSTREAM_NO_DEPRECATED
     APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
 
 option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)

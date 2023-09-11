@@ -234,100 +234,6 @@ void U_sstream_put_str(U_SStream *ss, const char *str)
     }
 }
 
-#ifndef U_SSTREAM_NO_DEPRECATED
-
-/* This is unsafe because returned pointer could be at str[ss.len] */
-const char *U_sstream_next_token(U_SStream *ss, const char *delim)
-{
-    const char *d;
-    const char *result;
-
-    U_ASSERT(ss->pos < ss->len); /* TODO handle */
-    result = &ss->str[ss->pos]; /* save current pos */
-
-    /* skip over until we see a delimeter */
-    for (; ss->pos < ss->len; ss->pos++)
-    {
-        d = delim;
-
-        for (; *d; d++)
-        {
-            if (ss->str[ss->pos] == *d)
-            {
-                ss->str[ss->pos] = '\0'; /* mark end of current token */
-                ss->pos++;
-                goto skip_delim;
-            }
-        }
-    }
-
-    return result;
-
-skip_delim:
-    for (; ss->pos < ss->len; ss->pos++)
-    {
-        d = delim;
-
-        for (; *d; d++)
-        {
-            if (ss->str[ss->pos] == *d)
-            {
-                ss->pos++;
-                goto skip_delim;
-            }
-        }
-
-        break;
-    }
-
-    return result;
-}
-
-/*  Outputs the signed integer 'num' as ASCII string.
-    Deprecated in favor of U_sstream_put_long().
-
-    On 64-bit systems num can be larger than 32-bits.
-
-    `num`: -2147483648 .. 2147483647
-*/
-void U_sstream_put_i32(U_SStream *ss, u_sstream_i32 num)
-{
-    U_sstream_put_long(ss, num);
-}
-
-void U_sstream_put_u32(U_SStream *ss, u_sstream_u32 num)
-{
-    U_ASSERT(num <= 2147483647);
-    U_sstream_put_long(ss, (long)num);
-}
-
-u_sstream_i32 U_sstream_get_i32(U_SStream *ss, int base)
-{
-    long r;
-
-    r = 0;
-    U_ASSERT(base == 10);
-    if (base == 10)
-    {
-        r = U_sstream_get_long(ss);
-    }
-
-    return (u_sstream_i32)r;
-}
-
-float U_sstream_get_f32(U_SStream *ss)
-{
-    return (float)U_sstream_get_double(ss);
-}
-
-double U_sstream_get_f64(U_SStream *ss)
-{
-    return U_sstream_get_double(ss);
-}
-
-
-#endif /* U_SSTREAM_NO_DEPRECATED */
-
 /*  Outputs the signed 32/64-bit integer 'num' as ASCII string.
 
     The range is different on 32-bit systems and Windows
@@ -353,15 +259,13 @@ void U_sstream_put_long(U_SStream *ss, long num)
 
     n = num;
     if (n < 0)
-    {
         ss->str[ss->pos++] = '-';
-        n = -n;
-    }
 
     pos = 0;
     do
     {
         remainder = n % 10;
+        remainder = remainder < 0 ? -remainder : remainder;
         n = n / 10;
         buf[pos++] = '0' + remainder;
     }
@@ -379,6 +283,268 @@ void U_sstream_put_long(U_SStream *ss, long num)
     }
 
     ss->str[ss->pos] = '\0';
+}
+
+/*  Outputs the signed 64-bit integer 'num' as ASCII string.
+
+    -9223372036854775807 .. 9223372036854775807
+
+    \param num signed number
+*/
+void U_sstream_put_longlong(U_SStream *ss, long long num)
+{
+    int i;
+    int pos;
+    int remainder;
+    long long n;
+    unsigned char buf[24];
+
+    if (ss->status != U_SSTREAM_OK)
+        return;
+
+    /* sign + max digits + NUL := 21 bytes on 64-bit */
+
+    n = num;
+    if (n < 0)
+        ss->str[ss->pos++] = '-';
+
+    pos = 0;
+    do
+    {
+        remainder = n % 10;
+        remainder = remainder < 0 ? -remainder : remainder;
+        n = n / 10;
+        buf[pos++] = '0' + remainder;
+    }
+    while (n);
+
+    if (ss->len - ss->pos < (unsigned)pos + 1) /* not enough space */
+    {
+        ss->status = U_SSTREAM_ERR_NO_SPACE;
+        return;
+    }
+
+    for (i = pos; i > 0; i--) /* reverse copy */
+    {
+        ss->str[ss->pos++] = buf[i - 1];
+    }
+
+    ss->str[ss->pos] = '\0';
+}
+
+/*  Outputs the unsigned 64-bit integer 'num' as ASCII string.
+
+    0 .. 18446744073709551615
+
+    \param num unsigned number
+*/
+void U_sstream_put_ulonglong(U_SStream *ss, unsigned long long num)
+{
+    int i;
+    int pos;
+    int remainder;
+    unsigned char buf[24];
+
+    if (ss->status != U_SSTREAM_OK)
+        return;
+
+    /* max digits + NUL := 21 bytes on 64-bit */
+
+
+    pos = 0;
+    do
+    {
+        remainder = num % 10;
+        num = num / 10;
+        buf[pos++] = '0' + remainder;
+    }
+    while (num);
+
+    if (ss->len - ss->pos < (unsigned)pos + 1) /* not enough space */
+    {
+        ss->status = U_SSTREAM_ERR_NO_SPACE;
+        return;
+    }
+
+    for (i = pos; i > 0; i--) /* reverse copy */
+    {
+        ss->str[ss->pos++] = buf[i - 1];
+    }
+
+    ss->str[ss->pos] = '\0';
+}
+
+union u64f
+{
+    double f;
+    unsigned long long i;
+};
+
+static int uss_is_nan(double x)
+{
+    int e;
+    union u64f u;
+
+    u.i = 0;
+    u.f = x;
+
+    e = (int)(u.i >> 52 & 0x7ff);
+    e ^= 0x7ff;
+    u.i <<= 12; /* mantissa */
+
+    return (e == 0 && u.i) ? 1 : 0;
+}
+
+static int uss_is_infinity(double x)
+{
+    int e;
+    union u64f u;
+
+    u.i = 0;
+    u.f = x;
+
+    e = (int)(u.i >> 52 & 0x7ff);
+    e ^= 0x7ff;
+    u.i <<= 12; /* mantissa */
+
+    if (e == 0 && u.i == 0)
+    {
+        u.f = x;
+        e = (int)(u.i >> 63); /* sign */
+        return e ? 1 : 2;
+    }
+
+    return 0;
+}
+
+/*
+ * Code adapted from musl libc modf implementation.
+ * https://steve.hollasch.net/cgindex/coding/ieeefloat.html
+ *
+ * Sign    Exponent      Mantissa
+ * 1 [63]  11 [62-52]    52 [51-0]
+ * S       EEEEEEE EEEE  FFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF
+ */
+static double uss_modf(double x, double *iptr)
+{
+    int e;
+    union u64f u;
+    unsigned long long mask;
+
+    u.i = 0; /* if unsigned long long becomes > 64-bit some day */
+    u.f = x;
+    /*
+     * get 11-bit exponent, cut off sign bit
+     */
+    e = (int)(u.i >> 52 & 0x7ff);
+    e -= 1023; /* substract bias */
+
+    /* no fractional part */
+    /*
+     * exponent range 2..2^52
+     */
+    if (e >= 52)
+    {
+        *iptr = x;
+        /*
+         * NaN when exponent = 1024 and mantissa != 0
+         */
+        if (e == 1024 && u.i << 12 != 0) /* nan */
+            return x;
+        u.i &= 1ULL << 63; /* keep the sign */
+        return u.f;
+    }
+
+    /* no integral part*/
+    if (e < 0)
+    {
+        u.i &= 1ULL << 63;
+        *iptr = u.f;
+        return x;
+    }
+
+    mask = -1ULL >> 12 >> e;
+    if ((u.i & mask) == 0)
+    {
+        *iptr = x;
+        u.i &= 1ULL << 63;
+        return u.f;
+    }
+    u.i &= ~mask;
+    *iptr = u.f;
+    return x - u.f;
+}
+
+void U_sstream_put_double(U_SStream *ss, double num, int precision)
+{
+    unsigned i;
+    double ipart;
+    double frac;
+    double prec;
+    long long b;
+    char buf[32];
+
+    if (uss_is_nan(num))
+    {
+        U_sstream_put_str(ss, "null");
+        return;
+    }
+
+    b = (unsigned)uss_is_infinity(num);
+    if (b != 0)
+    {
+        if (b == 1)
+            U_sstream_put_str(ss, "-");
+
+        U_sstream_put_str(ss, "1e99999");
+        return;
+    }
+
+    if      (precision < 1) precision = 1;
+    else if (precision > 18) precision = 18;
+
+    frac = uss_modf(num, &ipart);
+
+    /*
+     * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MIN_SAFE_INTEGER
+     */
+    if (ipart > 9007199254740991.0 || ipart < -9007199254740991.0)
+    {
+        /* error outside of max safe range 2^53-1 */
+        ss->status = U_SSTREAM_ERR_RANGE;
+        return;
+    }
+
+    if (ipart < 0)
+    {
+        ipart = -ipart;
+        frac = -frac;
+        U_sstream_put_str(ss, "-");
+    }
+
+    prec = 10;
+
+    b = (long long)ipart;
+    U_sstream_put_longlong(ss, b);
+
+    i = 0;
+    buf[i++] = '.';
+
+    for (;precision && i < sizeof(buf) - 1; precision--)
+    {
+        b = (long long)(frac * prec);
+        b = b % 10;
+        prec *= 10;
+        buf[i++] = b + '0';
+    }
+    buf[i] = '\0';
+
+    /* strip trailing zero and dot */
+    for (; i && (buf[i-1] == '0' || buf[i-1] == '.'); i--)
+        buf[i-1] = '\0';
+
+    if (buf[0])
+        U_sstream_put_str(ss, &buf[0]);
 }
 
 static const char _hex_table[16] = {
@@ -469,7 +635,7 @@ long U_strtol(const char *s, unsigned len, const char **endp, int *err)
 
     i = *s == '-' ? 1 : 0;
 
-    for (; i < len; i++)
+    for (; (unsigned)i < len; i++)
     {
         ch = s[i];
         if (ch < '0' || ch > '9')
