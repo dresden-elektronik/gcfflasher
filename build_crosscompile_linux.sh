@@ -30,3 +30,5 @@ docker rm gcfextract
 docker image rm $imgname
 
 done
+
+rm $dockfile
