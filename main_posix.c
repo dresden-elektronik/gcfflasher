@@ -23,6 +23,7 @@
 
 #include "gcf.h"
 #include "protocol.h"
+#include "u_mem.h"
 
 #define RX_BUF_SIZE 1024
 #define TX_BUF_SIZE 2048
@@ -53,6 +54,7 @@ int plResetFtdiLibGpiod(void);
 
 #ifdef PL_MAC
   #include "posix_libftdi_reset.c"
+int plGetMacOSUSBDevices(Device *dev, Device *end);
 #endif
 
 static int plSetupPort(int fd, int baudrate)
@@ -189,7 +191,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     if (baudrate1 == 0)
     {
         baudrate1 = B38400;
-
+#if 0
         if (strstr(path, "ACM")) /* ConBee II Linux */
         {
             baudrate1 = B115200;
@@ -198,6 +200,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         {
             baudrate1 = B115200;
         }
+#endif
     }
 
     plSetupPort(platform.fd, baudrate1);
@@ -270,8 +273,14 @@ int PL_GetDevices(Device *devs, unsigned max)
 {
     int result = 0;
 
+    U_bzero(devs, sizeof(*devs) * max);
+
 #ifdef PL_LINUX
     result = plGetLinuxUSBDevices(devs, devs + max);
+#endif
+
+#ifdef PL_MAC
+    result = plGetMacOSUSBDevices(devs, devs + max);
 #endif
 
     return result;

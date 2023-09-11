@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.5)
 project (GCFFlasher VERSION 4.2.2)
 
 add_executable(${PROJECT_NAME})
@@ -11,6 +11,7 @@ option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
 if (UNIX)
     target_sources(${PROJECT_NAME} PRIVATE main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 
+#----------------------------------------------------------------------
     if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Linux")
         target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX=1)
         target_sources(${PROJECT_NAME}
@@ -26,9 +27,17 @@ if (UNIX)
             target_link_libraries(${PROJECT_NAME} dl)
         endif()
     endif()
+
+#----------------------------------------------------------------------
+    if (APPLE)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE PL_MAC=1)
+        target_sources(${PROJECT_NAME}
+                PRIVATE
+                macos_get_usb_devices.c)
+    endif()
 endif()
 
-
+#----------------------------------------------------------------------
 if (WIN32)
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
 

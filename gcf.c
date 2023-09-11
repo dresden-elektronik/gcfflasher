@@ -493,7 +493,7 @@ static void ST_ListDevices(GCF *gcf, Event event)
         for (i = 0; i < gcf->devCount; i++)
         {
             dev = &gcf->devices[i];
-            UI_Printf(gcf, "%s\t%s\t%s\n", dev->path, dev->name, dev->serial);
+            UI_Printf(gcf, "%s\t%-20s %-12s\n", dev->path, dev->name, dev->serial);
         }
 
         PL_ShutDown();
