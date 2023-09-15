@@ -490,10 +490,13 @@ static void ST_ListDevices(GCF *gcf, Event event)
             UI_Printf(gcf, "no devices found\n");
         }
 
+        UI_Printf(gcf, "Path              | Serial      | Type\n");
+        UI_Printf(gcf, "------------------+-------------+---------------\n");
+
         for (i = 0; i < gcf->devCount; i++)
         {
             dev = &gcf->devices[i];
-            UI_Printf(gcf, "%s\t%-20s %-12s\n", dev->path, dev->name, dev->serial);
+            UI_Printf(gcf, "%-18s| %-12s| %s\n", dev->path, dev->serial, dev->name);
         }
 
         PL_ShutDown();
