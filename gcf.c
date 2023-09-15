@@ -1430,6 +1430,18 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 
                 } break;
 
+                case 'x':
+                {
+                    if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
+                    {
+                        PL_Printf(DBG_INFO, "missing argument for parameter -x\n");
+                        return GCF_FAILED;
+                    }
+
+                    i++;
+                    /* TODO this is a no-op currently */
+                } break;
+
                 case '?':
                 case 'h':
                 {
