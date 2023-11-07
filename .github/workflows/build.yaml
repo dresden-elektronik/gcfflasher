@@ -21,8 +21,7 @@ jobs:
     container: dockcross/${{ matrix.toolchain }}:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile project
-        run: |
+      - run: |
           cmake -B build .
           cmake --build build
           mv build/GCFFlasher GCFFlasher-${{ matrix.toolchain }}
