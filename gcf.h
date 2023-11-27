@@ -8,6 +8,9 @@
  *
  */
 
+#ifndef GCF_H
+#define GCF_H
+
 typedef enum
 {
     EV_ACTION = 0,
@@ -160,3 +163,5 @@ void PL_Printf(DebugLevel level, const char *format, ...);
 
 void UI_GetWinSize(unsigned *w, unsigned *h);
 void UI_SetCursor(unsigned x, unsigned y);
+
+#endif /* GCF_H */
