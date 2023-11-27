@@ -142,17 +142,19 @@ void PL_Print(const char *line)
 
 void PL_Printf(DebugLevel level, const char *format, ...)
 {
+    FILE *fp;
+
+    fp = stdout;
 #ifdef NDEBUG
     if (level == DBG_DEBUG)
-    {
         return;
-    }
-#else
-    (void)level;
 #endif
+    if (level == DBG_DEBUG)
+        fp = stderr;
+
     va_list args;
     va_start (args, format);
-    vprintf(format, args);
+    vfprintf(fp, format, args);
     va_end (args);
 }
 
@@ -406,7 +408,10 @@ static int PL_Loop(GCF *gcf)
         ret = poll(&fds, 1, 5);
 
         if (ret < 0)
+        {
+            PL_Printf(DBG_DEBUG, "poll error: %s\n", strerror(errno));
             break;
+        }
 
         if (ret == 0)
         {
