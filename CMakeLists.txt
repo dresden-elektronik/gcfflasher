@@ -8,8 +8,17 @@ target_compile_definitions(${PROJECT_NAME}
 
 option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
 
+set(COMMON_SRCS
+        gcf.c
+        buffer_helper.c
+        protocol.c
+        u_sstream.c
+        u_strlen.c
+        u_mem.c
+)
+
 if (UNIX)
-    target_sources(${PROJECT_NAME} PRIVATE main_posix.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
+    target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_posix.c)
 
 #----------------------------------------------------------------------
     if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Linux")
@@ -39,7 +48,7 @@ endif()
 
 #----------------------------------------------------------------------
 if (WIN32)
-    target_sources(${PROJECT_NAME} PRIVATE main_windows.c gcf.c buffer_helper.c protocol.c u_sstream.c u_strlen.c u_mem.c)
+    target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_windows.c)
 
     if (MSVC)
         target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB:libcmt")
