@@ -59,7 +59,7 @@ typedef unsigned long long PL_time_t;
   #elif __GNUC__
     #define Assert(c) if (!(c)) __builtin_trap()
   #else
-    #define Assert ((void)0)
+    #define Assert(c) ((void)0)
   #endif
 #endif /* NDEBUG */
 
