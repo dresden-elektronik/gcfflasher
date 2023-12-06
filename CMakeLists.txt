@@ -4,9 +4,9 @@ project (GCFFlasher VERSION 4.2.2)
 add_executable(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME}
     PUBLIC
-    APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
+    APP_VERSION="\"\"${PROJECT_VERSION}\"\"")
 
-option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
+option(USE_NET "Support connection via network sockets" OFF)
 
 set(COMMON_SRCS
         gcf.c
@@ -15,7 +15,19 @@ set(COMMON_SRCS
         u_sstream.c
         u_strlen.c
         u_mem.c
+        net.c
 )
+
+if (USE_NET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NET)
+    list(APPEND COMMON_SRCS net_sock.c)
+    if (UNIX)
+        list(APPEND COMMON_SRCS net_udp_posix.c)
+    endif ()
+    if (WIN32)
+        list(APPEND COMMON_SRCS net_udp_win32.c)
+    endif ()
+endif ()
 
 if (UNIX)
     target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_posix.c)
@@ -47,7 +59,26 @@ if (UNIX)
 endif()
 
 #----------------------------------------------------------------------
+# https://github.com/open-watcom/open-watcom-v2/wiki/OW-tools-usage-with-CMake
+if (DOS)
+    # if("${CMAKE_C_COMPILER_ID}" MATCHES "OpenWatcom")
+
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+            PL_DOS=1
+            PL_NO_ESCASCII=1
+            PL_NO_UTF8=1
+    )
+
+    set(CMAKE_C_FLAGS "-za99 -w1")
+    set(CMAKE_C_STANDARD 99)
+    #    add_compile_options(-D_WIN32)
+
+    target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_dos.c)
+endif()
+
 if (WIN32)
+    option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
+
     target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_windows.c)
 
     if (MSVC)
@@ -62,25 +93,25 @@ if (WIN32)
         if (MSVC_VERSION GREATER_EQUAL 1700)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /utf-8")
         endif()
+
+        if (USE_FTD2XX)
+            if ("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
+                target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/i386/ftd2xx.lib)
+            else()
+                target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/amd64/ftd2xx.lib)
+            endif()
+            target_compile_definitions(${PROJECT_NAME} PRIVATE
+                    FTD2XX_STATIC
+                    USE_FTD2XX
+            )
+        endif()
     endif()
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
-                PL_WIN=1
-                PL_NO_ESCASCII=1
-                PL_NO_UTF8=1
+        PL_WIN=1
+        PL_NO_ESCASCII=1
+        PL_NO_UTF8=1
     )
-
-    if (USE_FTD2XX)
-        if ("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
-            target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/i386/ftd2xx.lib)
-        else()
-            target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/amd64/ftd2xx.lib)
-        endif()
-        target_compile_definitions(${PROJECT_NAME} PRIVATE
-                FTD2XX_STATIC
-                USE_FTD2XX
-        )
-    endif()
 
     target_link_libraries(${PROJECT_NAME} setupapi shlwapi advapi32)
 endif()

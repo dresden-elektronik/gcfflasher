@@ -23,6 +23,7 @@
 #include "buffer_helper.h"
 #include "gcf.h"
 #include "protocol.h"
+#include "net.h"
 
 #define UI_MAX_LINE_LENGTH 255
 #define UI_MAX_LINES 32
@@ -1010,6 +1011,12 @@ void GCF_HandleEvent(GCF *gcf, Event event)
     PL_Printf(DBG_DEBUG, "GCF_HandleEvent: state: %s, event: %d\n", str, (int)event);
 #endif
 
+    if (event == EV_PL_LOOP)
+    {
+        NET_Step();
+        return;
+    }
+
     gcf->state(gcf, event);
 }
 
@@ -1146,14 +1153,21 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
     PROT_ReceiveFlagged(&gcf->rxstate, data, len);
 }
 
+void NET_Received(int client_id, const unsigned char *buf, unsigned bufsize)
+{
+    (void)buf;
+    PL_Printf(DBG_DEBUG, "NET received from client %d: %d bytes\n", client_id, bufsize);
+}
+
 void PROT_Packet(const unsigned char *data, unsigned len)
 {
-    Assert(len > 0);
-
     int i;
     char *p;
-    GCF *gcf = &gcfLocal;
+    GCF *gcf;
 
+    Assert(len > 0);
+
+    gcf = &gcfLocal;
 
     if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
@@ -1267,16 +1281,19 @@ static void gcfRetry(GCF *gcf)
 static void gcfPrintHelp()
 {
     const char *usage =
-
-    "GCFFlasher " APP_VERSION " copyright dresden elektronik ingenieurtechnik gmbh\n"
     "usage: GCFFlasher <options>\n"
     "options:\n"
     " -r              force device reboot without programming\n"
     " -f <firmware>   flash firmware file\n"
-#ifdef _WIN32
+#if defined(PL_WIN) || defined(PL_DOS)
     " -d <com port>   COM port to use, e.g. COM1\n"
 #else
     " -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee\n"
+#ifdef USE_NET
+    " -i <interface>  listen interface\n"
+    "                 when only -p is specified default is 0.0.0.0 for any interface\n"
+    " -p <port>       listen port\n"
+#endif
 #endif
     " -c              connect and debug serial protocol\n"
 //    " -s <serial>     serial number to use\n"
@@ -1285,6 +1302,11 @@ static void gcfPrintHelp()
 //    " -x <loglevel>   debug log level 0, 1, 3\n"
     " -h -?           print this help\n";
 
+#ifdef __WATCOMC__
+    PL_Printf(DBG_INFO, "GCFFlasher copyright dresden elektronik ingenieurtechnik gmbh\n"); /* compiler isn't happy with string define */
+#else
+    PL_Printf(DBG_INFO, "GCFFlasher %s copyright dresden elektronik ingenieurtechnik gmbh\n", APP_VERSION);
+#endif
 
     PL_Print(usage);
 }
@@ -1463,6 +1485,36 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     /* TODO this is a no-op currently */
                 } break;
 
+#ifdef USE_NET
+                case 'p':
+                {
+                    if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
+                    {
+                        PL_Printf(DBG_INFO, "missing argument for parameter -p\n");
+                        return GCF_FAILED;
+                    }
+
+                    i++;
+                    arg = gcf->argv[i];
+
+                    U_sstream_init(&ss, gcf->argv[i], U_strlen(gcf->argv[i]));
+
+                    longval = U_sstream_get_long(&ss); /* port */
+
+                    if (ss.status != U_SSTREAM_OK || longval < 0 || longval > 65535)
+                    {
+                        PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -p\n", arg);
+                        return GCF_FAILED;
+                    }
+
+                    if (NET_Init(0, (unsigned short)longval) != 1)
+                    {
+                        PL_Printf(DBG_INFO, "failed to start network server\n");
+                        return GCF_FAILED;
+                    }
+                }
+                    break;
+#endif
                 case '?':
                 case 'h':
                 {

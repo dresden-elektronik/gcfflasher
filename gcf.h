@@ -24,6 +24,7 @@ typedef enum
     EV_RASPBEE_RESET_FAILED = 23,
     EV_PKG_UART_RESET = 41,
     EV_PL_STARTED = 100,
+    EV_PL_LOOP = 101,
     EV_RX_ASCII = 50,
     EV_RX_BTL_PKG_DATA = 40,
     EV_CONNECTED = 200,

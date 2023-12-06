@@ -402,6 +402,8 @@ static int PL_Loop(GCF *gcf)
 
     while (platform.running)
     {
+        GCF_HandleEvent(gcf, EV_PL_LOOP);
+
         /* when no device is connected, poll STDIN, to get poll() timeout */
         fds.fd = platform.fd != 0 ? platform.fd : STDIN_FILENO;
 

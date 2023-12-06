@@ -9,6 +9,7 @@
  */
 
 #include "protocol.h"
+#include "gcf.h"
 
 #define FR_END       (unsigned char)0xC0
 #define FR_ESC       (unsigned char)0xDB
@@ -126,8 +127,11 @@ nextTurn:
 
                if (crcvalid)
                {
-
                  PROT_Packet(&rx->buf[0], rx->bufpos - 2);
+               }
+               else
+               {
+                   PL_Printf(DBG_INFO, "invalid CRC\n");
                }
             }
             rx->bufpos = 0;

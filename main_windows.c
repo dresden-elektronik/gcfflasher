@@ -20,7 +20,9 @@
 #include <initguid.h>
 #include <setupapi.h>
 #include <shlwapi.h>
+#ifndef __WATCOMC__
 #include <devpkey.h>
+#endif
 #include <tchar.h>
 #include <assert.h>
 #include <stdio.h>
@@ -282,6 +284,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
         }
 
         /*** check device name (only ConBee II and ConBee III) ********************/
+#ifndef __WATCOMC__
         /* for ConBee III this happens when enumerator == "USB" */
         PropertyKey = DEVPKEY_Device_BusReportedDeviceDesc;
 
@@ -326,7 +329,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                 }
             }
         }
-
+#endif
         /**************************************************************************/
 
         if (devs->name[0] == '\0')
