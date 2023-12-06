@@ -1573,13 +1573,17 @@ static void gcfCommandResetUart()
 
 static void gcfCommandQueryStatus()
 {
-    const unsigned char cmd[] = {
+    static unsigned char seq = 1;
+
+    unsigned char cmd[] = {
         0x07, // command: write parmater
         0x02, // seq
         0x00, // status
         0x08, 0x00, // frame length (12)
         0x00, 0x00, 0x00 // dummy bytes
     };
+
+    cmd[1] = seq++;
 
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
