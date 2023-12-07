@@ -12,6 +12,7 @@ set(COMMON_SRCS
         gcf.c
         buffer_helper.c
         protocol.c
+        u_bstream.c
         u_sstream.c
         u_strlen.c
         u_mem.c
