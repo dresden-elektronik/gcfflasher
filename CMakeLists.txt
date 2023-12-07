@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.5)
-project (GCFFlasher VERSION 4.2.2)
+project (GCFFlasher VERSION 4.3.0)
 
 add_executable(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME}
