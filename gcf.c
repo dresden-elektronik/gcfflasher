@@ -925,8 +925,8 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 
             if (gcf->remaining == length)
             {
-                UI_Printf(gcf, "\ndone, wait (up to 10 seconds) for verification\n");
-                PL_SetTimeout(10000);
+                UI_Printf(gcf, "\ndone, wait (up to 20 seconds) for verification\n");
+                PL_SetTimeout(20000);
                 gcf->state = ST_V3ProgramWaitID;
             }
         }
