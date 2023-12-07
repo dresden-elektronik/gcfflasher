@@ -1,13 +1,6 @@
 cmake_minimum_required (VERSION 3.5)
 project (GCFFlasher VERSION 4.3.0)
 
-add_executable(${PROJECT_NAME})
-target_compile_definitions(${PROJECT_NAME}
-    PUBLIC
-    APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
-
-option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
-
 set(COMMON_SRCS
         gcf.c
         buffer_helper.c
@@ -18,8 +11,15 @@ set(COMMON_SRCS
         u_mem.c
 )
 
+add_executable(${PROJECT_NAME} ${COMMON_SRCS})
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+    APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
+
+option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
+
 if (UNIX)
-    target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_posix.c)
+    target_sources(${PROJECT_NAME} PRIVATE main_posix.c)
 
 #----------------------------------------------------------------------
     if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Linux")
@@ -49,7 +49,7 @@ endif()
 
 #----------------------------------------------------------------------
 if (WIN32)
-    target_sources(${PROJECT_NAME} PRIVATE ${COMMON_SRCS} main_windows.c)
+    target_sources(${PROJECT_NAME} PRIVATE main_windows.c)
 
     if (MSVC)
         target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB:libcmt")
@@ -93,12 +93,23 @@ install(TARGETS ${PROJECT_NAME}
 # Debian .deb specifics
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Manuel Pietschmann <mpi@dresden-elektronik.de>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "non-free / misc")
-set(CPACK_DEBIAN_PACKAGE_)
+
+# keep arch names as used in the past
+set(PKG_ARCH ${CMAKE_SYSTEM_PROCESSOR})
+if (${PKG_ARCH} MATCHES "aarch64")
+    set(PKG_ARCH "arm64")
+endif()
+if (${PKG_ARCH} MATCHES "armv7l")
+    set(PKG_ARCH "armhf")
+endif()
+if (${PKG_ARCH} MATCHES "x86_64")
+    set(PKG_ARCH "amd64")
+endif()
 
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" LOWERCASE_SYSTEM_NAME)
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/dresden-elektronik/gcfflasher")
 set(CPACK_PACKAGE_DESCRIPTION "Tool to flash firmware of RaspBee and ConBee.")
-set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}_${PROJECT_VERSION}_${LOWERCASE_SYSTEM_NAME}_${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_PACKAGE_FILE_NAME "gcfflasher_${PROJECT_VERSION}_${LOWERCASE_SYSTEM_NAME}_${PKG_ARCH}")
 
 include(CPack)
