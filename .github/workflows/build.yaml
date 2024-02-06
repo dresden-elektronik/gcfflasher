@@ -34,7 +34,7 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: files
-          path: GCFFlasher-${{ matrix.toolchain }}
+          path: GCFFlasher-armhf
 
   release:
     runs-on: ubuntu-latest
