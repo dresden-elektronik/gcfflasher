@@ -30,6 +30,8 @@ jobs:
             cmake -B build .
             cmake --build build
             mv build/GCFFlasher GCFFlasher-armhf
+            pwd
+            ls -al
 
       - uses: actions/upload-artifact@v3
         with:
