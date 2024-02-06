@@ -7,7 +7,7 @@ on:
       - "v*.*.*"
 
 jobs:
-  build:
+  build_arm:
     # strategy:
     #   matrix:
     #     toolchain:
@@ -21,9 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pguyot/arm-runner-action@v2
-        id: build
+        id: build_arm
         with:
-          base_image: raspios_lite:latest
+          base_image: raspios_lite_arm64:latest
           copy_artifact_path: build/GCFFlasher
           commands: |
             apt-get -y install pkg-config build-essential libgpiod-dev cmake make
@@ -31,7 +31,7 @@ jobs:
             cmake --build build
 
       - name: Rename binary to reflect archtiecture
-        run: mv GCFFlasher GCFFlasher-armhf
+        run: mv GCFFlasher GCFFlasher-arm64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -40,7 +40,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build_arm]
     permissions:
       contents: write
     steps:
