@@ -18,19 +18,21 @@ jobs:
     #       - linux-arm64-lts
 
     runs-on: ubuntu-latest
-    # container: dockcross/${{ matrix.toolchain }}:latest
     steps:
       - uses: actions/checkout@v4
       - uses: pguyot/arm-runner-action@v2
-        id: build_arm64
+        id: build
         with:
           base_image: raspios_lite:latest
-          copy_artifact_path: build
+          copy_artifact_path: build/GCFFlasher
           commands: |
             apt-get -y install pkg-config build-essential libgpiod-dev cmake make
             cmake -B build .
             cmake --build build
-            mv build/GCFFlasher GCFFlasher-armhf
+
+      - name: Compress the release image
+        run: mv GCFFlasher GCFFlasher-armhf
+
       - uses: actions/upload-artifact@v4
         with:
           name: files
