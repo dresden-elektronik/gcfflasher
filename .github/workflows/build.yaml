@@ -36,7 +36,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: files
-          path: GCFFlasher-armhf
+          path: GCFFlasher-arm64
 
   release:
     runs-on: ubuntu-latest
