@@ -24,12 +24,12 @@ jobs:
       - uses: pguyot/arm-runner-action@v2
         id: build_arm64
         with:
-          base_image: raspi_3_bullseye:20230102
+          base_image: raspios_lite:latest
           commands: |
             apt install libgpiod-dev
             cmake -B build .
             cmake --build build
-            mv build/GCFFlasher GCFFlasher-arm64
+            mv build/GCFFlasher GCFFlasher-armhf
 
       - uses: actions/upload-artifact@v3
         with:
