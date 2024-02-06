@@ -28,7 +28,7 @@ jobs:
           commands: |
             apt-get -y install pkg-config build-essential libgpiod-dev cmake make
             cmake -B build .
-            cmake --build build -DCMAKE_BUILD_TYPE=Release
+            cmake -DCMAKE_BUILD_TYPE=Release --build build
 
       - name: Rename binary to reflect archtiecture
         run: mv GCFFlasher GCFFlasher-arm64
