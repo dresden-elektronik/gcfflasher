@@ -25,15 +25,16 @@ jobs:
         id: build_arm64
         with:
           base_image: raspios_lite:latest
+          copy_artifact_path: build
           commands: |
             apt-get -y install pkg-config build-essential libgpiod-dev cmake make
             cmake -B build .
             cmake --build build
-            mv build/GCFFlasher /GCFFlasher-armhf
+            mv build/GCFFlasher GCFFlasher-armhf
       - uses: actions/upload-artifact@v4
         with:
           name: files
-          path: /GCFFlasher-armhf
+          path: GCFFlasher-armhf
 
   release:
     runs-on: ubuntu-latest
