@@ -1,4 +1,4 @@
-name: C/C++ CI
+ame: C/C++ CI
 
 on:
   workflow_dispatch:
@@ -8,23 +8,28 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        toolchain:
-          - linux-x64
-          - linux-x86
-          - linux-armv6-lts
-          - linux-armv7-lts
-          - linux-arm64-lts
+    # strategy:
+    #   matrix:
+    #     toolchain:
+    #       - arm64
+    #       - linux-x86
+    #       - linux-armv6-lts
+    #       - linux-armv7-lts
+    #       - linux-arm64-lts
 
     runs-on: ubuntu-latest
-    container: dockcross/${{ matrix.toolchain }}:latest
+    # container: dockcross/${{ matrix.toolchain }}:latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          cmake -B build .
-          cmake --build build
-          mv build/GCFFlasher GCFFlasher-${{ matrix.toolchain }}
+      - uses: pguyot/arm-runner-action@v2
+        id: build_arm64
+        with:
+          base_image: raspi_3_bullseye:20230102
+          commands: |
+            apt install libgpiod-dev
+            cmake -B build .
+            cmake --build build
+            mv build/GCFFlasher GCFFlasher-arm64
 
       - uses: actions/upload-artifact@v3
         with:
