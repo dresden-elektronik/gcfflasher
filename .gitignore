@@ -4,7 +4,7 @@
 GCFFlasher
 .idea
 *.dSYM/
-build/
+build*/
 debout/
 cmake-build*
 linux-cross.Dockerfile

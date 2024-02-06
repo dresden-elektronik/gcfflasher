@@ -86,14 +86,13 @@ void PROT_SendFlagged(const unsigned char *data, unsigned len)
 
 void PROT_ReceiveFlagged(PROT_RxState *rx, const unsigned char *data, unsigned len)
 {
+    unsigned char c;
+    unsigned short pos = 0;
 
    if (len == 0)
    {
        return;
    }
-
-   unsigned char c;
-   unsigned short pos = 0;
 
 nextTurn:
    while(pos < len)

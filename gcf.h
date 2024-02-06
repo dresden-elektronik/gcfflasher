@@ -8,6 +8,9 @@
  *
  */
 
+#ifndef GCF_H
+#define GCF_H
+
 typedef enum
 {
     EV_ACTION = 0,
@@ -56,7 +59,7 @@ typedef unsigned long long PL_time_t;
   #elif __GNUC__
     #define Assert(c) if (!(c)) __builtin_trap()
   #else
-    #define Assert ((void)0)
+    #define Assert(c) ((void)0)
   #endif
 #endif /* NDEBUG */
 
@@ -160,3 +163,5 @@ void PL_Printf(DebugLevel level, const char *format, ...);
 
 void UI_GetWinSize(unsigned *w, unsigned *h);
 void UI_SetCursor(unsigned x, unsigned y);
+
+#endif /* GCF_H */

@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdarg.h> /* va_list, ... */
 #include "u_sstream.h"
+#include "u_bstream.h"
 #include "u_strlen.h"
 #include "u_mem.h"
 #include "buffer_helper.h"
@@ -31,6 +32,10 @@
 
 #define GCF_HEADER_SIZE 14
 #define GCF_MAGIC 0xCAFEFEED
+
+#define FLASH_TYPE_APP_ENCRYPTED             60
+#define FLASH_TYPE_APP_COMPRESSED_ENCRYPTED  70
+#define FLASH_TYPE_BTL_ENCRYPTED             80
 
 #define FW_VERSION_PLATFORM_MASK 0x0000FF00
 #define FW_VERSION_PLATFORM_R21  0x00000700 /* 0x26120700*/
@@ -82,11 +87,12 @@ typedef struct GCF_File_t
     unsigned long gcfTargetAddress;
     unsigned long gcfFileSize;
     unsigned char gcfCrc;
+    unsigned long gcfCrc32;
 
     unsigned char fcontent[MAX_GCF_FILE_SIZE];
 } GCF_File;
 
-typedef struct
+typedef struct UI_Line
 {
     unsigned length;
     char buf[UI_MAX_LINE_LENGTH];
@@ -148,6 +154,7 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event);
 
 static void ST_V3ProgramSync(GCF *gcf, Event event);
 static void ST_V3ProgramUpload(GCF *gcf, Event event);
+static void ST_V3ProgramWaitID(GCF *gcf, Event event);
 
 static void ST_BootloaderConnect(GCF *gcf, Event event);
 static void ST_BootloaderQuery(GCF *gcf, Event event);
@@ -182,8 +189,10 @@ void put_hex(unsigned char ch, char *buf)
 
 static UI_Line *UI_NextLine(GCF *gcf)
 {
+    UI_Line *line;
+
     gcf->uiCurrentLine = (gcf->uiCurrentLine + 1) % UI_MAX_LINES;
-    UI_Line *line = &gcf->uiLines[gcf->uiCurrentLine];
+    line = &gcf->uiLines[gcf->uiCurrentLine];
 
     line->buf[0] = '\0';
     line->length = 0;
@@ -193,12 +202,13 @@ static UI_Line *UI_NextLine(GCF *gcf)
 
 void UI_Printf(GCF *gcf, const char *format, ...)
 {
+    int sz;
     UI_Line *line;
     va_list args;
 
     line = UI_NextLine(gcf);
     va_start (args, format);
-    int sz = vsnprintf(&line->buf[0], sizeof(line->buf), format, args);
+    sz = vsnprintf(&line->buf[0], sizeof(line->buf), format, args);
     if (sz < 0 || sz > (int)sizeof(line->buf))
     {
         line->buf[0] = '\0';
@@ -562,6 +572,7 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
 static void ST_BootloaderQuery(GCF *gcf, Event event)
 {
     U_SStream ss;
+    unsigned char buf[2];
 
     if (event == EV_ACTION)
     {
@@ -588,7 +599,8 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             */
             UI_Printf(gcf, "query bootloader id V1\n");
 
-            unsigned char buf[2] = { 'I', 'D' };
+            buf[0] = 'I';
+            buf[1] = 'D';
 
             PROT_Write(buf, sizeof(buf));
             PL_SetTimeout(200);
@@ -601,8 +613,9 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             */
             UI_Printf(gcf, "query bootloader id V3\n");
 
-            unsigned char cmd[2] = { BTL_MAGIC, BTL_ID_REQUEST };
-            PROT_SendFlagged(cmd, sizeof(cmd));
+            buf[0] = BTL_MAGIC;
+            buf[1] = BTL_ID_REQUEST;
+            PROT_SendFlagged(buf, 2);
             PL_SetTimeout(200);
         }
     }
@@ -631,7 +644,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             get_u32_le((unsigned char*)&gcf->ascii[2], &btlVersion);
             get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
 
-            UI_Printf(gcf, "bootloader version 0x%08X, app crc 0x%08X\n", btlVersion, appCrc);
+            UI_Printf(gcf, "bootloader version 0x%08X, app crc 0x%08X\n\n", btlVersion, appCrc);
 
             gcf->state = ST_V3ProgramSync;
             GCF_HandleEvent(gcf, EV_ACTION);
@@ -646,13 +659,17 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
 static void ST_V1ProgramSync(GCF *gcf, Event event)
 {
     U_SStream ss;
+    unsigned char buf[4];
 
     if (event == EV_ACTION)
     {
         gcf->wp = 0;
         gcf->ascii[0] = '\0';
 
-        unsigned char buf[4] = { 0x1A, 0x1C, 0xA9, 0xAE };
+        buf[0] = 0x1A;
+        buf[1] = 0x1C;
+        buf[2] = 0xA9;
+        buf[3] = 0xAE;
 
         PROT_Write(buf, sizeof(buf));
 
@@ -684,12 +701,13 @@ static void ST_V1ProgramWriteHeader(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
+        unsigned char *p;
+        unsigned char buf[10];
+
         gcf->wp = 0;
         gcf->ascii[0] = '\0';
 
-        unsigned char buf[10];
-
-        unsigned char *p = buf;
+        p = buf;
         p = put_u32_le(p, &gcf->file.gcfFileSize);
         p = put_u32_le(p, &gcf->file.gcfTargetAddress);
         *p++ = gcf->file.gcfFileType;
@@ -707,6 +725,11 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
 {
     if (event == EV_RX_ASCII)
     {
+        unsigned char *end;
+        unsigned char *page;
+        unsigned long pageNumber;
+        unsigned size;
+
         /* Firmware GET requests (6 bytes)
            "GET" U16 page ";"
         */
@@ -715,13 +738,12 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
             return;
         }
 
-        unsigned long pageNumber;
         pageNumber = (unsigned char)gcf->ascii[4];
         pageNumber <<= 8;
         pageNumber |= (unsigned char)(gcf->ascii[3] & 0xFF);
 
-        unsigned char *page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
-        unsigned char *end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
+        page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
+        end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
 
         Assert(page < end);
         if (page >= end)
@@ -730,7 +752,7 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         }
 
         gcf->remaining = (unsigned)(end - page);
-        unsigned size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
+        size = gcf->remaining > V1_PAGESIZE ? V1_PAGESIZE : gcf->remaining;
 
         if (pageNumber % 20 == 0 || gcf->remaining < V1_PAGESIZE)
         {
@@ -742,7 +764,6 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         gcf->ascii[0] = '\0';
 
         PROT_Write(page, size);
-
 
         if ((gcf->remaining - size) == 0)
         {
@@ -791,19 +812,20 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
+        unsigned char *p;
+        unsigned char cmd[] = {
+                BTL_MAGIC,
+                BTL_FW_UPDATE_REQUEST,
+                0x00, 0x0C, 0x00, 0x00, /* data size */
+                0x00, 0x00, 0x00, 0x00, /* target address */
+                0x00,                   /* file type */
+                0xAA, 0xAA, 0xAA, 0xAA  /* crc32 todo */
+        };
+
         PL_MSleep(50);
         PL_SetTimeout(1000);
 
-        unsigned char cmd[] = {
-            BTL_MAGIC,
-            BTL_FW_UPDATE_REQUEST,
-            0x00, 0x0C, 0x00, 0x00, /* data size */
-            0x00, 0x00, 0x00, 0x00, /* target address */
-            0x00,                   /* file type */
-            0xAA, 0xAA, 0xAA, 0xAA  /* crc32 todo */
-        };
-
-        unsigned char *p = &cmd[2];
+        p = &cmd[2];
 
         p = put_u32_le(p, &gcf->file.gcfFileSize);
         p = put_u32_le(p, &gcf->file.gcfTargetAddress);
@@ -833,12 +855,15 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 {
     if (event == EV_RX_BTL_PKG_DATA)
     {
-        if (gcf->ascii[1] == BTL_FW_DATA_REQUEST && gcf->wp == 8)
+        if ((unsigned char)gcf->ascii[1] == BTL_FW_DATA_REQUEST && gcf->wp == 8)
         {
-            PL_SetTimeout(5000);
-
+            unsigned char *buf;
+            unsigned char *p;
             unsigned long offset;
             unsigned short length;
+            unsigned char status;
+
+            PL_SetTimeout(5000);
 
             get_u32_le((unsigned char*)&gcf->ascii[2], &offset);
             get_u16_le((unsigned char*)&gcf->ascii[6], &length);
@@ -847,13 +872,13 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
 #endif
 
-            unsigned char *buf = (unsigned char*)&gcf->ascii[0];
-            unsigned char *p = buf;
+            buf = (unsigned char*)&gcf->ascii[0];
+            p = buf;
 
             *p++ = BTL_MAGIC;
             *p++ = BTL_FW_DATA_RESPONSE;
 
-            unsigned char status = 0; // success
+            status = 0; // success
             gcf->remaining = 0;
 
             if ((offset + length) > gcf->file.gcfFileSize)
@@ -900,9 +925,48 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 
             if (gcf->remaining == length)
             {
-                UI_Printf(gcf, "\nfinished\n");
-                PL_SetTimeout(500);
+                UI_Printf(gcf, "\ndone, wait (up to 20 seconds) for verification\n");
+                PL_SetTimeout(20000);
+                gcf->state = ST_V3ProgramWaitID;
             }
+        }
+        else
+        {
+            PL_Printf(DBG_DEBUG, "unexpected command %02X\n", (unsigned char)gcf->ascii[1]);
+        }
+    }
+    else if (event == EV_TIMEOUT)
+    {
+        gcfRetry(gcf);
+    }
+}
+
+static void ST_V3ProgramWaitID(GCF *gcf, Event event)
+{
+    if (event == EV_RX_BTL_PKG_DATA)
+    {
+        if ((unsigned char)gcf->ascii[1] == BTL_ID_RESPONSE)
+        {
+            unsigned long btlVersion;
+            unsigned long appCrc;
+
+            get_u32_le((unsigned char*)&gcf->ascii[2], &btlVersion);
+            get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
+
+            if (gcf->file.gcfCrc32 != 0)
+            {
+                if (appCrc == gcf->file.gcfCrc32)
+                {
+                    UI_Printf(gcf, "app checksum 0x%08X (OK)\n", appCrc);
+                }
+                else
+                {
+                    UI_Printf(gcf, "app checksum 0x%08X (expected 0x%08X)\n", appCrc, gcf->file.gcfCrc32);
+                }
+            }
+
+            UI_Printf(gcf, "finished\n");
+            PL_ShutDown();
         }
     }
     else if (event == EV_TIMEOUT)
@@ -999,17 +1063,19 @@ int GCF_ParseFile(GCF_File *file)
 {
     unsigned char ch;
     const char *version;
-    const unsigned char *p;
+    unsigned long magic;
+    U_BStream bs[1];
 
     if (file->fsize < 14)
     {
         return -1;
     }
 
+    U_bstream_init(bs, file->fcontent, file->fsize);
+
     Assert(file->fname[0] != '\0');
 
     file->fwVersion = 0;
-
     version = &file->fname[0];
 
     /* parse hex number 0x26780700 */
@@ -1047,17 +1113,58 @@ int GCF_ParseFile(GCF_File *file)
        U32 file size
        U8  checksum (Dallas CRC-8)
     */
+    magic = U_bstream_get_u32_le(bs);
+    file->gcfFileType = U_bstream_get_u8(bs);
+    file->gcfTargetAddress = U_bstream_get_u32_le(bs);
+    file->gcfFileSize = U_bstream_get_u32_le(bs);
+    file->gcfCrc = U_bstream_get_u8(bs);
 
-    p = file->fcontent;
+    PL_Printf(DBG_DEBUG, "GCF header0: magic: 0x%08X, type: %u, address: 0x%08X, data.size: %lu\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
 
-    unsigned long magic;
-    p = get_u32_le(p, &magic);
-    p = get_u8_le(p, &file->gcfFileType);
-    p = get_u32_le(p, &file->gcfTargetAddress);
-    p = get_u32_le(p, &file->gcfFileSize);
-    get_u8_le(p, &file->gcfCrc);
+    /* newer products have extended format with CRC32 */
+    file->gcfCrc32 = 0;
+    if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED)
+    {
+        /*
+         * u32 magic
+         *   0xDEC0DE02 Hive
+         *   0xDEC0DE03 ConBee III
+         *
+         * u32 total_size
+         * image_1
+         * ...
+         * image_N
+         * u32 crc32 over everything
+         *
+         * image format:
+         *   u32 image_size
+         *   u32 image_type
+         *   u32 target_address
+         *   u32 plain_image_size (uncompressed)
+         *   u32 plain_crc2
+         *   u8[] data (4-byte aligned)
+         */
 
-    PL_Printf(DBG_DEBUG, "GCF header: magic: 0x%08X, type: %u, address: 0x%08X, data.size: 0x%08X\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
+        unsigned long magic1;
+        unsigned long totalSize;
+        unsigned long imageSize;
+        unsigned long imageType;
+        unsigned long imageTargetAddress;
+        unsigned long imagePlainSize;
+
+        magic1 = U_bstream_get_u32_le(bs);
+
+        totalSize = U_bstream_get_u32_le(bs);
+        Assert(totalSize == file->gcfFileSize);
+        imageSize = U_bstream_get_u32_le(bs);
+        imageType = U_bstream_get_u32_le(bs);
+        imageTargetAddress = U_bstream_get_u32_le(bs);
+        imagePlainSize = U_bstream_get_u32_le(bs);
+        file->gcfCrc32 = U_bstream_get_u32_le(bs);
+
+        PL_Printf(DBG_DEBUG, "GCF header1: product: 0x%08X, img.type: %u, img.address: 0x%08X, img.data.size: %lu, crc32: 0x%08X\n",
+                  magic1, imageType, imageTargetAddress, imagePlainSize, file->gcfCrc32);
+    }
 
     if (magic != GCF_MAGIC)
     {
@@ -1072,7 +1179,6 @@ int GCF_ParseFile(GCF_File *file)
     return 0;
 }
 
-
 void GCF_Received(GCF *gcf, const unsigned char *data, int len)
 {
     int i;
@@ -1081,7 +1187,7 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
 
     Assert(len > 0);
 
-    /* gcfDebugHex(gcf, "recv", data, len); */
+    /*gcfDebugHex(gcf, "recv", data, len);*/
 
     if (gcf->state == ST_BootloaderQuery ||
         gcf->state == ST_V1ProgramSync ||
@@ -1555,13 +1661,17 @@ static void gcfCommandResetUart()
 
 static void gcfCommandQueryStatus()
 {
-    const unsigned char cmd[] = {
+    static unsigned char seq = 1;
+
+    unsigned char cmd[] = {
         0x07, // command: write parmater
         0x02, // seq
         0x00, // status
         0x08, 0x00, // frame length (12)
         0x00, 0x00, 0x00 // dummy bytes
     };
+
+    cmd[1] = seq++;
 
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
