@@ -45,7 +45,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-        id: files
+        with:
+          name: files
       - uses: softprops/action-gh-release@v1
         with:
           draft: false
