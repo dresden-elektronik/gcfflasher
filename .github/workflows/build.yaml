@@ -1,4 +1,4 @@
-ame: C/C++ CI
+name: C/C++ CI
 
 on:
   workflow_dispatch:
