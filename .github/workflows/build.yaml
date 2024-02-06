@@ -30,7 +30,7 @@ jobs:
             cmake -B build .
             cmake --build build
 
-      - name: Compress the release image
+      - name: Rename binary to reflect archtiecture
         run: mv GCFFlasher GCFFlasher-armhf
 
       - uses: actions/upload-artifact@v4
