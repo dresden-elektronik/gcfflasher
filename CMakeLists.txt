@@ -14,9 +14,10 @@ set(COMMON_SRCS
 )
 
 add_executable(${PROJECT_NAME} ${COMMON_SRCS})
+
 target_compile_definitions(${PROJECT_NAME}
     PUBLIC
-    APP_VERSION="\"\"${PROJECT_VERSION}-beta\"\"")
+    APP_VERSION="\"\"${PROJECT_VERSION}\"\"")
 
 if (USE_NET)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NET)
