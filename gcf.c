@@ -664,9 +664,9 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
 
             ss = UI_StringStream(gcf);
-            U_sstream_put_str(ss, "bootloader version ");
+            U_sstream_put_str(ss, "bootloader version 0x");
             U_sstream_put_u32hex(ss, btlVersion);
-            U_sstream_put_str(ss, ", app crc ");
+            U_sstream_put_str(ss, ", app crc 0x");
             U_sstream_put_u32hex(ss, appCrc);
             U_sstream_put_str(ss, "\n\n");
             UI_Puts(gcf, ss->str);
@@ -996,7 +996,7 @@ static void ST_V3ProgramWaitID(GCF *gcf, Event event)
             if (gcf->file.gcfCrc32 != 0)
             {
                 ss = UI_StringStream(gcf);
-                U_sstream_put_str(ss, "app checksum ");
+                U_sstream_put_str(ss, "app checksum 0x");
                 U_sstream_put_u32hex(ss, appCrc);
                 if (appCrc == gcf->file.gcfCrc32)
                 {
@@ -1004,7 +1004,7 @@ static void ST_V3ProgramWaitID(GCF *gcf, Event event)
                 }
                 else
                 {
-                    U_sstream_put_str(ss, " (expected ");
+                    U_sstream_put_str(ss, " (expected 0x");
                     U_sstream_put_u32hex(ss, gcf->file.gcfCrc32);
                     U_sstream_put_str(ss, ")");
                 }
@@ -1466,19 +1466,15 @@ void U_sstream_put_u32hex(U_SStream *ss, unsigned long val)
     unsigned i;
     unsigned char nib;
 
-    if ((ss->len - ss->pos) < (2 + 8 + 1))
+    if ((ss->len - ss->pos) < (8 + 1))
     {
         ss->status = U_SSTREAM_ERR_NO_SPACE;
         return;
     }
 
-    ss->str[ss->pos++] = '0';
-    ss->str[ss->pos++] = 'x';
-
     for (i = 0; i < 4; i++)
     {
-        //nib = buf[i];
-        nib = (val >> 28) & 0xFF;
+        nib = (val >> 24) & 0xFF;
         val <<= 8;
         put_hex(nib, &ss->str[ss->pos]);
         ss->pos += 2;

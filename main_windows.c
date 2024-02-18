@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2024 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -15,7 +15,6 @@
 */
 
 #define WIN32_LEAN_AND_MEAN
-#define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <initguid.h>
 #include <setupapi.h>
@@ -24,16 +23,14 @@
 #include <devpkey.h>
 #endif
 #include <tchar.h>
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <stdarg.h>
-#include <string.h>
 
 #include "gcf.h"
 #include "u_sstream.h"
 #include "u_strlen.h"
+
+/* in gcf.c for now */
+extern void U_sstream_put_u32hex(U_SStream *ss, unsigned long val);
 
 #ifdef USE_FTD2XX
   #include "ftd2xx/ftd2xx.h"
@@ -46,10 +43,10 @@ typedef struct
     PL_time_t timer;
     HANDLE fd;
     HANDLE hOut;
-    uint8_t running;
-    uint8_t rxbuf[64];
-    uint8_t txbuf[2048];
-    size_t txpos;
+    int running;
+    unsigned char rxbuf[64];
+    unsigned char txbuf[2048];
+    unsigned long txpos;
 
     LARGE_INTEGER frequency;
     BOOL frequencyValid;
@@ -61,6 +58,19 @@ static PL_Internal platform;
 
 
 static int GetComPort(const char *enumerator, Device *devs, size_t max);
+
+/* for compiling without CRT */
+int _fltused=0;
+
+#pragma function(memset)
+void *memset(void *dst, int c, SIZE_T count)
+{
+    char *p = dst;
+    for (;count; count--)
+        *p++ = (char)c;
+
+    return dst;
+}
 
 /*! Returns a monotonic time in milliseconds. */
 PL_time_t PL_Time()
@@ -359,13 +369,18 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                     (LPBYTE) pszPortName, &dwSize) == ERROR_SUCCESS) && (dwType == REG_SZ))
                 {
                     // is a com port?
-                    if (_tcsnicmp(pszPortName, "COM", 3) == 0)
+                    if (pszPortName[0] == 'C' && pszPortName[1] == 'O' && pszPortName[2] == 'M')
                     {
-                        int nPortNr = atoi( pszPortName + 3);
-                        if (nPortNr != 0)
+                        if (pszPortName[3] >= '0' && pszPortName[3] <= '9')
                         {
-                            strcpy_s(dev->path, sizeof(dev->path), pszPortName);
-                            strcpy_s(dev->stablepath, sizeof(dev->path), pszPortName);
+                            unsigned sz = 0;
+                            for (; pszPortName[sz] && sz + 1 < sizeof(dev->path); sz++)
+                            {
+                                dev->path[sz] = pszPortName[sz];
+                                dev->stablepath[sz] = pszPortName[sz];
+                            }
+                            dev->path[sz] = '\0';
+                            dev->stablepath[sz] = '\0';
                         }
                     }
                 }
@@ -391,6 +406,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
 GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 {
     char buf[32];
+    U_SStream ss;
 
     if (platform.fd != INVALID_HANDLE_VALUE)
     {
@@ -403,13 +419,15 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         return GCF_FAILED;
     }
 
+    U_sstream_init(&ss, buf, sizeof(buf));
     if (*path == 'C')
     {
-        snprintf(buf, sizeof(buf), "\\\\.\\%s", path);
+        U_sstream_put_str(&ss, "\\\\.\\");
+        U_sstream_put_str(&ss, path);
     }
     else if (*path == '\\')
     {
-        memcpy(buf, path, strlen(path) + 1);
+        U_sstream_put_str(&ss, path);
     }
     else
     {
@@ -447,7 +465,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     Status = GetCommState(platform.fd, &dcbSerialParams); //retreives  the current settings
     if (Status == FALSE)
     {
-        printf("\nError to Get the Com state\n\n");
+        PL_Printf(DBG_DEBUG, "\nError to Get the Com state\n\n");
         goto Exit1;
     }
 
@@ -472,7 +490,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     Status = SetCommState(platform.fd, &dcbSerialParams);
     if (Status == FALSE)
     {
-        printf("\nError to Setting DCB Structure\n\n");
+        PL_Printf(DBG_DEBUG, "\nError to Setting DCB Structure\n\n");
         goto Exit1;
     }
     //Setting Timeouts
@@ -483,14 +501,14 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     timeouts.WriteTotalTimeoutMultiplier = 0;
     if (SetCommTimeouts(platform.fd, &timeouts) == 0)
     {
-        printf("\nError to Setting Time outs");
+        PL_Printf(DBG_DEBUG, "\nError to Setting Time outs");
         goto Exit1;
     }
 
     Status = SetCommMask(platform.fd, EV_RXCHAR);
     if (Status == FALSE)
     {
-        printf("\nError to in Setting CommMask\n\n");
+        PL_Printf(DBG_DEBUG, "\nError to in Setting CommMask\n\n");
         goto Exit1;
     }
 
@@ -575,8 +593,6 @@ int PL_ResetFTDI(int num, const char *serialnum)
         {
             if (U_sstream_starts_with(&ss, &serial[0]))
             {
-                // printf("RESET [%d] %d %s %s\n", dev, deviceId, serial, description);
-
                 UCHAR ucMask = 0xf1; // CBUS0 --> 1
 
                 /* ucMask - Required value for bit mode mask. This sets up which bits are inputs and
@@ -672,6 +688,10 @@ void PL_Print(const char *line)
     }
 }
 
+/* TODO(mpi) This function doesn't depend on platform anymore, and
+ *           should be moved into gcf.c so that platform layers only
+ *           need to provide PL_Print()
+ */
 void PL_Printf(DebugLevel level, const char *format, ...)
 {
 #ifdef NDEBUG
@@ -682,10 +702,87 @@ void PL_Printf(DebugLevel level, const char *format, ...)
 #else
     (void)level;
 #endif
+
+    static char buf[1024];
+    U_SStream ss;
+    const char *fmt;
+    const char *xx;
+    long vlong;
+    unsigned long vulong;
     va_list args;
+
     va_start (args, format);
-    vprintf(format, args);
+
+    xx = 0;
+    fmt = format;
+    U_sstream_init(&ss, buf, sizeof(buf));
+
+    for (; *fmt && ss.pos + 1 < ss.len; fmt++)
+    {
+        if (xx)
+        {
+            if (*fmt == 's')
+            {
+                xx = (const char*)va_arg(args, const char*);
+                U_sstream_put_str(&ss, xx);
+                xx = 0;
+            }
+            else if (*fmt == 'x' || *fmt == 'X')
+            {
+                vulong = (unsigned long)va_arg(args, unsigned int);
+                U_sstream_put_u32hex(&ss, vulong);
+                xx = 0;
+            }
+            else if (*fmt == 'd')
+            {
+                if (fmt[-1] == 'l') vlong = (long)va_arg(args, long);
+                else                vlong = (long)va_arg(args, int);
+                U_sstream_put_long(&ss, vlong);
+                xx = 0;
+            }
+            else if (*fmt == 'u')
+            {
+                if (fmt[-1] == 'l') vulong = (unsigned long)va_arg(args, unsigned long);
+                else                vulong = (unsigned long)va_arg(args, unsigned int);
+                U_sstream_put_long(&ss, (long)vulong);
+                xx = 0;
+            }
+            else if (*fmt >= '0' && *fmt <= '9')
+            {
+            }
+            else if (*fmt == 'l')
+            {
+            }
+            else if (*fmt == '%')
+            {
+                U_sstream_put_str(&ss, "%");
+                xx = 0;
+            }
+            else
+            {
+                /* unknown format specifier */
+                U_sstream_put_str(&ss, "??");
+                xx = 0;
+            }
+        }
+        else if (*fmt == '%')
+        {
+            xx = fmt + 1;
+        }
+        else
+        {
+            ss.str[ss.pos++] = *fmt;
+        }
+    }
+
+    ss.str[ss.pos] = '\0';
+
     va_end (args);
+
+    if (ss.pos)
+    {
+        PL_Print(buf);
+    }
 }
 
 void UI_GetWinSize(unsigned *w, unsigned *h)
@@ -860,4 +957,62 @@ int main(int argc, char **argv)
     GCF_Exit(gcf);
 
     return 0;
+}
+
+#define MAX_CMDLINE_ARGS 16
+#define MAX_CMDLINE_LEN 512
+
+int mainCRTStartup(void)
+{
+    int i;
+    int argc;
+
+    unsigned cmdllen = 0;
+    static char *argv[MAX_CMDLINE_ARGS];
+    static char cmdlbuf[MAX_CMDLINE_LEN];
+
+    {
+        LPSTR pcmd = GetCommandLineA();
+        cmdllen = 0;
+
+        if (pcmd)
+        {
+            for (i = 0; pcmd[i] && (i + 1) < MAX_CMDLINE_LEN; i++)
+            {
+                cmdlbuf[i] = pcmd[i];
+            }
+            cmdlbuf[i] = '\0';
+            cmdllen = i;
+        }
+    }
+
+    argc = 0;
+
+    if (cmdllen)
+    {
+        int quote;
+        U_SStream ss;
+        U_sstream_init(&ss, cmdlbuf, cmdllen);
+
+        quote = 0;
+        for (;argc < MAX_CMDLINE_ARGS && ss.pos < ss.len; argc++)
+        {
+            argv[argc] = &ss.str[ss.pos];
+            for (;ss.pos < ss.len; ss.pos++)
+            {
+                if (ss.str[ss.pos] == '"')
+                {
+                    quote = quote ? 0 : 1;
+                }
+                if (ss.str[ss.pos] == ' ' && quote == 0)
+                {
+                    ss.str[ss.pos] = '\0';
+                    ss.pos++;
+                    break;
+                }
+            }
+        }
+    }
+
+    return main(argc, argv);
 }

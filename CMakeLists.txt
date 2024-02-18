@@ -78,18 +78,33 @@ if (DOS)
 endif()
 
 if (WIN32)
-    option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" ON)
+    option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" OFF)
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c)
 
     if (MSVC)
-        target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB:libcmt")
+        set(CMAKE_C_FLAGS_DEBUG_INIT "")
+        set(CMAKE_C_FLAGS_DEBUG "/Od /Zi")
+
+#        set(CMAKE_C_FLAGS_MINSIZEREL_INIT "")
+#        set(CMAKE_C_FLAGS_MINSIZEREL "/O1 /MT")
+
+        #target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB:libcmt")
+        target_link_options(${PROJECT_NAME} PUBLIC "/NODEFAULTLIB" "/STACK:0x100000,0x100000")
 
         add_compile_options(
             $<$<CONFIG:>:/MT> #---------|
             $<$<CONFIG:Debug>:/MTd> #---|-- Statically link the runtime libraries
             $<$<CONFIG:Release>:/MT> #--|
         )
-        #set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+
+        target_compile_options(${PROJECT_NAME} BEFORE PRIVATE
+                "/std:c11"
+                "/GR-"
+                "/EHa-"
+                "/GS-"
+                "/Gs999999999"
+                )
+
         if (MSVC_VERSION GREATER_EQUAL 1700)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /utf-8")
         endif()

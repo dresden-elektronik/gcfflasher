@@ -131,7 +131,7 @@ nextTurn:
                }
                else
                {
-                   PL_Printf(DBG_INFO, "invalid CRC\n");
+                   PL_Printf(DBG_DEBUG, "invalid CRC\n");
                }
             }
             rx->bufpos = 0;
