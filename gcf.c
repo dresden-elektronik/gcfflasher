@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2024 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -8,15 +8,13 @@
  *
  */
 
-/* This file implements the platform independend part of GCFFlasher.
+/* This file implements the platform independent part of GCFFlasher.
  */
 
 #ifndef APP_VERSION /* provided by CMakeLists.txt */
 #define APP_VERSION "v0.0.0-beta"
 #endif
 
-#include <stdio.h>
-#include <stdarg.h> /* va_list, ... */
 #include "u_sstream.h"
 #include "u_bstream.h"
 #include "u_strlen.h"
@@ -41,6 +39,7 @@
 #define FW_VERSION_PLATFORM_MASK 0x0000FF00
 #define FW_VERSION_PLATFORM_R21  0x00000700 /* 0x26120700*/
 #define FW_VERSION_PLATFORM_AVR  0x00000500 /* 0x26390500*/
+
 
 /* Bootloader V3.x serial protocol */
 #define BTL_MAGIC              0x81
@@ -95,7 +94,6 @@ typedef struct GCF_File_t
 
 typedef struct UI_Line
 {
-    unsigned length;
     char buf[UI_MAX_LINE_LENGTH];
 } UI_Line;
 
@@ -112,6 +110,7 @@ typedef struct GCF_t
     /* UI line buffering */
     unsigned uiCurrentLine;
     UI_Line uiLines[UI_MAX_LINES];
+    U_SStream uiStringStream;
 
     int retry;
 
@@ -171,7 +170,8 @@ static void ST_ResetRaspBee(GCF *gcf, Event event);
 static void ST_ListDevices(GCF *gcf, Event event);
 
 static UI_Line *UI_NextLine(GCF *gcf);
-void UI_Printf(GCF *gcf, const char *format, ...);
+U_SStream *UI_StringStream(GCF *gcf);
+void U_sstream_put_u32hex(U_SStream *ss, unsigned long val);
 
 static GCF gcfLocal;
 
@@ -196,36 +196,25 @@ static UI_Line *UI_NextLine(GCF *gcf)
     line = &gcf->uiLines[gcf->uiCurrentLine];
 
     line->buf[0] = '\0';
-    line->length = 0;
 
     return line;
 }
 
-void UI_Printf(GCF *gcf, const char *format, ...)
+void UI_Puts(GCF *gcf, const char *str)
 {
-    int sz;
+    (void)gcf;
+    if (str[0])
+    {
+        PL_Print(str);
+    }
+}
+
+U_SStream *UI_StringStream(GCF *gcf)
+{
     UI_Line *line;
-    va_list args;
-
     line = UI_NextLine(gcf);
-    va_start (args, format);
-    sz = vsnprintf(&line->buf[0], sizeof(line->buf), format, args);
-    if (sz < 0 || sz > (int)sizeof(line->buf))
-    {
-        line->buf[0] = '\0';
-        line->length = 0;
-    }
-    else
-    {
-        line->length = (unsigned)sz;
-    }
-    va_end (args);
-
-    if (line->length > 0)
-    {
-        //PL_Printf(DBG_INFO, "UI [%2u]: %s", gcf->uiCurrentLine, line->buf);
-        PL_Print(line->buf);
-    }
+    U_sstream_init(&gcf->uiStringStream, line->buf, sizeof(line->buf));
+    return &gcf->uiStringStream;
 }
 
 #ifdef PL_NO_UTF8
@@ -404,7 +393,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_PKG_UART_RESET)
     {
-        UI_Printf(gcf, "command UART reset done\n");
+        UI_Puts(gcf, "command UART reset done\n");
         if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
         {
             /* due FTDI don't wait for disconnect */
@@ -414,7 +403,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Printf(gcf, "command reset timeout\n");
+        UI_Puts(gcf, "command reset timeout\n");
         gcf->substate = ST_Void;
         PL_Disconnect();
         GCF_HandleEvent(gcf, EV_UART_RESET_FAILED);
@@ -428,12 +417,12 @@ static void ST_ResetFtdi(GCF *gcf, Event event)
     {
         if (PL_ResetFTDI(0, &gcf->devSerialNum[0]) == 0)
         {
-            UI_Printf(gcf, "FTDI reset done\n");
+            UI_Puts(gcf, "FTDI reset done\n");
             GCF_HandleEvent(gcf, EV_FTDI_RESET_SUCCESS);
         }
         else
         {
-            UI_Printf(gcf,  "FTDI reset failed\n");
+            UI_Puts(gcf,  "FTDI reset failed\n");
             GCF_HandleEvent(gcf, EV_FTDI_RESET_FAILED);
         }
     }
@@ -446,12 +435,12 @@ static void ST_ResetRaspBee(GCF *gcf, Event event)
     {
         if (PL_ResetRaspBee() == 0)
         {
-            UI_Printf(gcf, "RaspBee reset done\n");
+            UI_Puts(gcf, "RaspBee reset done\n");
             GCF_HandleEvent(gcf, EV_RASPBEE_RESET_SUCCESS);
         }
         else
         {
-            UI_Printf(gcf, "RaspBee reset failed\n");
+            UI_Puts(gcf, "RaspBee reset failed\n");
             GCF_HandleEvent(gcf, EV_RASPBEE_RESET_FAILED);
         }
     }
@@ -489,8 +478,9 @@ static void gcfGetDevices(GCF *gcf)
 
 static void ST_ListDevices(GCF *gcf, Event event)
 {
-    Device *dev;
     unsigned i;
+    Device *dev;
+    U_SStream *ss;
 
     if (event == EV_ACTION)
     {
@@ -498,16 +488,38 @@ static void ST_ListDevices(GCF *gcf, Event event)
 
         if (gcf->devCount == 0)
         {
-            UI_Printf(gcf, "no devices found\n");
+            UI_Puts(gcf, "no devices found\n");
         }
 
-        UI_Printf(gcf, "Path              | Serial      | Type\n");
-        UI_Printf(gcf, "------------------+-------------+---------------\n");
+        UI_Puts(gcf, "Path              | Serial      | Type\n");
+        UI_Puts(gcf, "------------------+-------------+---------------\n");
 
         for (i = 0; i < gcf->devCount; i++)
         {
             dev = &gcf->devices[i];
-            UI_Printf(gcf, "%-18s| %-12s| %s\n", dev->path, dev->serial, dev->name);
+            ss = UI_StringStream(gcf);
+
+            /* 1st column */
+            U_sstream_put_str(ss, dev->path);
+            for (;ss->pos < 18;)
+            {
+                U_sstream_put_str(ss, " ");
+            }
+            U_sstream_put_str(ss, "| ");
+
+            /* 2nd column */
+            U_sstream_put_str(ss, dev->serial);
+            for (;ss->pos < 32;)
+            {
+                U_sstream_put_str(ss, " ");
+            }
+            U_sstream_put_str(ss, "| ");
+
+            /* 3rd column */
+            U_sstream_put_str(ss, dev->name);
+            U_sstream_put_str(ss, "\n");
+
+            UI_Puts(gcf, ss->str);
         }
 
         PL_ShutDown();
@@ -519,7 +531,7 @@ static void ST_Program(GCF *gcf, Event event)
     if (event == EV_ACTION)
     {
         gcfGetDevices(gcf);
-        UI_Printf(gcf, "flash firmware\n");
+        UI_Puts(gcf, "flash firmware\n");
         gcf->state = ST_Reset;
         GCF_HandleEvent(gcf, event);
     }
@@ -544,6 +556,7 @@ static void ST_Program(GCF *gcf, Event event)
 
 static void ST_BootloaderConnect(GCF *gcf, Event event)
 {
+    U_SStream *ss;
     if (event == EV_TIMEOUT)
     {
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
@@ -555,7 +568,11 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
         {
             // todo retry, a couple of times and revert to gcfRetry()
             PL_SetTimeout(500);
-            UI_Printf(gcf, "retry connect bootloader %s\n", gcf->devpath);
+            ss = UI_StringStream(gcf);
+            U_sstream_put_str(ss, "retry connect bootloader ");
+            U_sstream_put_str(ss, gcf->devpath);
+            U_sstream_put_str(ss, "\n");
+            UI_Puts(gcf, ss->str);
         }
     }
     else if (event == EV_RX_ASCII)
@@ -572,7 +589,8 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
 
 static void ST_BootloaderQuery(GCF *gcf, Event event)
 {
-    U_SStream ss;
+    U_SStream *ss;
+    U_SStream ss1;
     unsigned char buf[2];
 
     if (event == EV_ACTION)
@@ -589,7 +607,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     {
         if (++gcf->retry == 3)
         {
-            UI_Printf(gcf, "query bootloader failed\n");
+            UI_Puts(gcf, "query bootloader failed\n");
             gcfRetry(gcf);
         }
         else if (gcf->file.gcfFileType < 30)
@@ -598,7 +616,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            UI_Printf(gcf, "query bootloader id V1\n");
+            UI_Puts(gcf, "query bootloader id V1\n");
 
             buf[0] = 'I';
             buf[1] = 'D';
@@ -612,7 +630,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            UI_Printf(gcf, "query bootloader id V3\n");
+            UI_Puts(gcf, "query bootloader id V3\n");
 
             buf[0] = BTL_MAGIC;
             buf[1] = BTL_ID_REQUEST;
@@ -624,11 +642,11 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     {
         if (gcf->wp > 32 && gcf->ascii[gcf->wp - 1] == '\n')
         {
-            U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
-            if (U_sstream_find(&ss, "Bootloader"))
+            U_sstream_init(&ss1, &gcf->ascii[0], gcf->wp);
+            if (U_sstream_find(&ss1, "Bootloader"))
             {
                 PL_ClearTimeout();
-                UI_Printf(gcf, "bootloader detected (%u)\n", gcf->wp);
+                UI_Puts(gcf, "bootloader detected\n");
 
                 gcf->state = ST_V1ProgramSync;
                 GCF_HandleEvent(gcf, EV_ACTION);
@@ -645,7 +663,13 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             get_u32_le((unsigned char*)&gcf->ascii[2], &btlVersion);
             get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
 
-            UI_Printf(gcf, "bootloader version 0x%08X, app crc 0x%08X\n\n", btlVersion, appCrc);
+            ss = UI_StringStream(gcf);
+            U_sstream_put_str(ss, "bootloader version ");
+            U_sstream_put_u32hex(ss, btlVersion);
+            U_sstream_put_str(ss, ", app crc ");
+            U_sstream_put_u32hex(ss, appCrc);
+            U_sstream_put_str(ss, "\n\n");
+            UI_Puts(gcf, ss->str);
 
             gcf->state = ST_V3ProgramSync;
             GCF_HandleEvent(gcf, EV_ACTION);
@@ -659,7 +683,8 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
 
 static void ST_V1ProgramSync(GCF *gcf, Event event)
 {
-    U_SStream ss;
+    U_SStream *ss;
+    U_SStream ss1;
     unsigned char buf[4];
 
     if (event == EV_ACTION)
@@ -678,11 +703,15 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_RX_ASCII)
     {
-        U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
-        if (gcf->wp > 4 && U_sstream_find(&ss, "READY"))
+        U_sstream_init(&ss1, &gcf->ascii[0], gcf->wp);
+        if (gcf->wp > 4 && U_sstream_find(&ss1, "READY"))
         {
             PL_ClearTimeout();
-            UI_Printf(gcf, "bootloader synced: %s\n", gcf->ascii);
+            ss = UI_StringStream(gcf);
+            U_sstream_put_str(ss, "bootloader synced: ");
+            U_sstream_put_str(ss, gcf->ascii);
+            U_sstream_put_str(ss, "\n");
+            UI_Puts(gcf, ss->str);
             gcf->state = ST_V1ProgramWriteHeader;
             GCF_HandleEvent(gcf, EV_ACTION);
         }
@@ -693,7 +722,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Printf(gcf, "failed to sync bootloader (%u) %s\n", gcf->wp, gcf->ascii);
+        UI_Puts(gcf, "failed to sync bootloader\n");
         gcfRetry(gcf);
     }
 }
@@ -757,7 +786,6 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
 
         if (pageNumber % 20 == 0 || gcf->remaining < V1_PAGESIZE)
         {
-            // UI_Printf(gcf, "GET 0x%04X (page %u)\n", pageNumber, pageNumber);
             UI_UpdateProgress(gcf);
         }
 
@@ -769,7 +797,7 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         if ((gcf->remaining - size) == 0)
         {
             gcf->state = ST_V1ProgramValidate;
-            UI_Printf(gcf, "\ndone, wait validation...\n");
+            UI_Puts(gcf, "\ndone, wait validation...\n");
             PL_SetTimeout(25600);
         }
         else
@@ -789,12 +817,11 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event)
 
     if (event == EV_RX_ASCII)
     {
-        PL_Printf(DBG_DEBUG, "VLD %s (%u)\n", gcf->ascii, gcf->wp);
         U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
 
         if (gcf->wp > 6 && U_sstream_find(&ss, "#VALID CRC"))
         {
-            UI_Printf(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET, gcf->ascii);
+            UI_Puts(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET);
             PL_ShutDown();
         }
         else
@@ -854,6 +881,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
 
 static void ST_V3ProgramUpload(GCF *gcf, Event event)
 {
+    U_SStream *ss;
     if (event == EV_RX_BTL_PKG_DATA)
     {
         if ((unsigned char)gcf->ascii[1] == BTL_FW_DATA_REQUEST && gcf->wp == 8)
@@ -870,7 +898,13 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             get_u16_le((unsigned char*)&gcf->ascii[6], &length);
 
 #ifndef NDEBUG
-            UI_Printf(gcf, "BTL data request, offset: 0x%08X, length: %u\n", offset, length);
+            ss = UI_StringStream(gcf);
+            U_sstream_put_str(ss, "BTL data request, offset: ");
+            U_sstream_put_long(ss, (long)offset);
+            U_sstream_put_str(ss, ", length: ");
+            U_sstream_put_long(ss, (long)length);
+            U_sstream_put_str(ss, "\n");
+            UI_Puts(gcf, ss->str);
 #endif
 
             buf = (unsigned char*)&gcf->ascii[0];
@@ -914,7 +948,11 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             }
             else
             {
-                UI_Printf(gcf, "failed to handle data request, status: %u\n", status);
+                ss = UI_StringStream(gcf);
+                U_sstream_put_str(ss, "failed to handle data request, status: ");
+                U_sstream_put_long(ss, (long)status);
+                U_sstream_put_str(ss, "\n");
+                UI_Puts(gcf, ss->str);
             }
 
             Assert(p > buf);
@@ -926,7 +964,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 
             if (gcf->remaining == length)
             {
-                UI_Printf(gcf, "\ndone, wait (up to 20 seconds) for verification\n");
+                UI_Puts(gcf, "\ndone, wait (up to 20 seconds) for verification\n");
                 PL_SetTimeout(20000);
                 gcf->state = ST_V3ProgramWaitID;
             }
@@ -944,6 +982,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 
 static void ST_V3ProgramWaitID(GCF *gcf, Event event)
 {
+    U_SStream *ss;
     if (event == EV_RX_BTL_PKG_DATA)
     {
         if ((unsigned char)gcf->ascii[1] == BTL_ID_RESPONSE)
@@ -956,17 +995,24 @@ static void ST_V3ProgramWaitID(GCF *gcf, Event event)
 
             if (gcf->file.gcfCrc32 != 0)
             {
+                ss = UI_StringStream(gcf);
+                U_sstream_put_str(ss, "app checksum ");
+                U_sstream_put_u32hex(ss, appCrc);
                 if (appCrc == gcf->file.gcfCrc32)
                 {
-                    UI_Printf(gcf, "app checksum 0x%08X (OK)\n", appCrc);
+                    U_sstream_put_str(ss, " (OK)");
                 }
                 else
                 {
-                    UI_Printf(gcf, "app checksum 0x%08X (expected 0x%08X)\n", appCrc, gcf->file.gcfCrc32);
+                    U_sstream_put_str(ss, " (expected ");
+                    U_sstream_put_u32hex(ss, gcf->file.gcfCrc32);
+                    U_sstream_put_str(ss, ")");
                 }
+                U_sstream_put_str(ss, "\n");
+                UI_Puts(gcf, ss->str);
             }
 
-            UI_Printf(gcf, "finished\n");
+            UI_Puts(gcf, "finished\n");
             PL_ShutDown();
         }
     }
@@ -988,7 +1034,7 @@ static void ST_Connect(GCF *gcf, Event event)
         else
         {
             gcf->state = ST_Init;
-            UI_Printf(gcf, "failed to connect\n");
+            UI_Puts(gcf, "failed to connect\n");
             PL_SetTimeout(10000);
         }
     }
@@ -1005,7 +1051,7 @@ static void ST_Connected(GCF *gcf, Event event)
     {
         PL_ClearTimeout();
         gcf->state = ST_Init;
-        UI_Printf(gcf, "disconnected\n");
+        UI_Puts(gcf, "disconnected\n");
         PL_SetTimeout(1000);
     }
 }
@@ -1252,6 +1298,7 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     int i;
     char *p;
     GCF *gcf;
+    U_SStream *ss;
 
     Assert(len > 0);
 
@@ -1265,7 +1312,13 @@ void PROT_Packet(const unsigned char *data, unsigned len)
             put_hex(data[i], p);
         }
         *p = '\0';
-        UI_Printf(gcf, "packet: %d bytes, %s\n", len, gcf->ascii);
+        ss = UI_StringStream(gcf);
+        U_sstream_put_str(ss, "packet: ");
+        U_sstream_put_long(ss, (long)len);
+        U_sstream_put_str(ss, " bytes, ");
+        U_sstream_put_str(ss, gcf->ascii);
+        U_sstream_put_str(ss, "\n");
+        UI_Puts(gcf, ss->str);
     }
     else
     {
@@ -1351,10 +1404,18 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
 
 static void gcfRetry(GCF *gcf)
 {
-    PL_time_t now = PL_Time();
+    PL_time_t now;
+    U_SStream *ss;
+
+    now = PL_Time();
+
     if (gcf->maxTime > now)
     {
-        UI_Printf(gcf, "retry: %d seconds left\n", (int)(gcf->maxTime - now) / 1000);
+        ss = UI_StringStream(gcf);
+        U_sstream_put_str(ss, "retry: ");
+        U_sstream_put_long(ss, (long)(gcf->maxTime - now) / 1000);
+        U_sstream_put_str(ss, " seconds left\n");
+        UI_Puts(gcf, ss->str);
 
         gcf->state = ST_Init;
         gcf->substate = ST_Void;
@@ -1399,12 +1460,39 @@ static void gcfPrintHelp()
     PL_Print(usage);
 }
 
+/* helper to print 0x%08X format */
+void U_sstream_put_u32hex(U_SStream *ss, unsigned long val)
+{
+    unsigned i;
+    unsigned char nib;
+
+    if ((ss->len - ss->pos) < (2 + 8 + 1))
+    {
+        ss->status = U_SSTREAM_ERR_NO_SPACE;
+        return;
+    }
+
+    ss->str[ss->pos++] = '0';
+    ss->str[ss->pos++] = 'x';
+
+    for (i = 0; i < 8; i++)
+    {
+        //nib = buf[i];
+        nib = (val >> 28) & 0xFF;
+        put_hex(nib, &ss->str[ss->pos]);
+        ss->pos += 2;
+    }
+
+    ss->str[ss->pos] = '\0';
+}
+
 void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned size)
 {
 #ifndef NDEBUG
     char *p;
     char buf[1024];
     unsigned i;
+    U_SStream *ss;
 
     p = &buf[0];
 
@@ -1415,7 +1503,15 @@ void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned 
     }
     *p = '\0';
 
-    UI_Printf(gcf, FMT_GREEN "%s:" FMT_RESET " %s (%u bytes)\n", msg, &buf[0], size);
+    ss = UI_StringStream(gcf);
+    U_sstream_put_str(ss, FMT_GREEN);
+    U_sstream_put_str(ss, msg);
+    U_sstream_put_str(ss, ":" FMT_RESET " ");
+    U_sstream_put_str(ss, &buf[0]);
+    U_sstream_put_str(ss, " (");
+    U_sstream_put_long(ss, (long)size);
+    U_sstream_put_str(ss, ")\n");
+    UI_Puts(gcf, ss->str);
 #else
     (void)gcf;
     (void)msg;
