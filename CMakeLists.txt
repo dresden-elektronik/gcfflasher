@@ -89,7 +89,7 @@ if (WIN32)
             $<$<CONFIG:Debug>:/MTd> #---|-- Statically link the runtime libraries
             $<$<CONFIG:Release>:/MT> #--|
         )
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+        #set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
         if (MSVC_VERSION GREATER_EQUAL 1700)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /utf-8")
         endif()

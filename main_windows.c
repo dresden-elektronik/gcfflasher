@@ -45,6 +45,7 @@ typedef struct
 {
     PL_time_t timer;
     HANDLE fd;
+    HANDLE hOut;
     uint8_t running;
     uint8_t rxbuf[64];
     uint8_t txbuf[2048];
@@ -524,6 +525,7 @@ void PL_ShutDown()
 /*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
 int PL_ResetFTDI(int num, const char *serialnum)
 {
+    (void)num;
 #ifdef USE_FTD2XX
 
     unsigned seriallen;
@@ -656,7 +658,18 @@ int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen)
 
 void PL_Print(const char *line)
 {
-    printf("%s", line);
+    DWORD nchars;
+
+    if (platform.hOut == INVALID_HANDLE_VALUE)
+        return;
+
+    for (nchars = 0; line[nchars]; nchars++)
+    { }
+
+    if (nchars)
+    {
+        WriteConsoleA(platform.hOut, line, nchars, NULL, NULL);
+    }
 }
 
 void PL_Printf(DebugLevel level, const char *format, ...)
@@ -750,11 +763,37 @@ int PROT_Flush()
     return result;
 }
 
+static void plInitOutput(void)
+{
+    platform.hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    if (platform.hOut == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+
+    DWORD dwMode = 0;
+    if (!GetConsoleMode(platform.hOut, &dwMode))
+    {
+        return;
+    }
+
+    /*
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (!SetConsoleMode(platform.hOut, dwMode))
+    {
+        return;
+    }
+    */
+}
+
 static void PL_Loop(GCF *gcf)
 {
     ZeroMemory(&platform, sizeof(platform));
     platform.gcf = gcf;
     platform.fd = INVALID_HANDLE_VALUE;
+
+    plInitOutput();
 
     platform.running = 1;
     platform.frequencyValid = QueryPerformanceFrequency(&platform.frequency);
