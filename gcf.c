@@ -1475,10 +1475,11 @@ void U_sstream_put_u32hex(U_SStream *ss, unsigned long val)
     ss->str[ss->pos++] = '0';
     ss->str[ss->pos++] = 'x';
 
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < 4; i++)
     {
         //nib = buf[i];
         nib = (val >> 28) & 0xFF;
+        val <<= 8;
         put_hex(nib, &ss->str[ss->pos]);
         ss->pos += 2;
     }
