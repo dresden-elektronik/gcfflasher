@@ -352,6 +352,7 @@ int plGetLinuxUSBDevices(Device *dev, Device *end)
 int plGetLinuxSerialDevices(Device *dev, Device *end)
 {
     int sz;
+    U_SStream ss;
     struct stat statbuf;
     char lnkpath[MAX_DEV_PATH_LENGTH];
     const char *ser0 = "/dev/serial0";
@@ -367,7 +368,13 @@ int plGetLinuxSerialDevices(Device *dev, Device *end)
                 dev->serial[0] = 0;
                 U_memcpy(dev->name, "RaspBee", strlen("RaspBee") + 1);
                 dev->baudrate = PL_BAUDRATE_38400;
-                U_memcpy(dev->path, lnkpath, sz + 1);
+
+                U_sstream_init(&ss, dev->path, sizeof(dev->path));
+                if (lnkpath[0] != '/')
+                {
+                    U_sstream_put_str(&ss, "/dev/");
+                }
+                U_sstream_put_str(&ss, lnkpath);
                 U_memcpy(dev->stablepath, ser0, strlen(ser0) + 1);
                 return 1;
             }
