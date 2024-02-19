@@ -81,6 +81,10 @@ if (WIN32)
     option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" OFF)
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c)
 
+    if(MINGW)
+        set(CMAKE_VERBOSE_MAKEFILE ON)
+    endif()
+
     if (MSVC)
         set(CMAKE_C_FLAGS_DEBUG_INIT "")
         set(CMAKE_C_FLAGS_DEBUG "/Od /Zi")

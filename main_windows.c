@@ -61,9 +61,12 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max);
 
 /* for compiling without CRT */
 int _fltused=0;
-
+#ifdef _MSC_VER
 #pragma function(memset)
 void *memset(void *dst, int c, SIZE_T count)
+#else
+void *memset(void *dst, int c, size_t count)
+#endif
 {
     char *p = dst;
     for (;count; count--)
@@ -71,6 +74,24 @@ void *memset(void *dst, int c, SIZE_T count)
 
     return dst;
 }
+
+#ifdef _X86_
+/* mingw32 on i686 doesn't have long devision */
+__attribute((externally_visible))
+long __divdi3(long n, long d)
+{
+    long q = 0;
+    if (n == 0 || d == 0)
+        return 0;
+
+      while (n >= d)
+      {
+        ++q;
+        n -= d;
+      }
+      return q;
+}
+#endif
 
 /*! Returns a monotonic time in milliseconds. */
 PL_time_t PL_Time()
@@ -946,7 +967,7 @@ static void PL_Loop(GCF *gcf)
     }
 }
 
-int main(int argc, char **argv)
+static int PL_Main(int argc, char **argv)
 {
     GCF *gcf = GCF_Init(argc, argv);
     if (gcf == NULL)
@@ -962,7 +983,7 @@ int main(int argc, char **argv)
 #define MAX_CMDLINE_ARGS 16
 #define MAX_CMDLINE_LEN 512
 
-int mainCRTStartup(void)
+void mainCRTStartup(void)
 {
     int i;
     int argc;
@@ -1014,5 +1035,6 @@ int mainCRTStartup(void)
         }
     }
 
-    return main(argc, argv);
+    int ret = PL_Main(argc, argv);
+    ExitProcess(ret);
 }
