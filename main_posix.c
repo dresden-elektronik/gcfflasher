@@ -44,6 +44,7 @@ static PL_Internal platform;
 
 #ifdef PL_LINUX
 int plGetLinuxUSBDevices(Device *dev, Device *end);
+int plGetLinuxSerialDevices(Device *dev, Device *end);
 
 #ifdef HAS_LIBGPIOD
 int plResetRaspBeeLibGpiod(void);
@@ -279,6 +280,10 @@ int PL_GetDevices(Device *devs, unsigned max)
 
 #ifdef PL_LINUX
     result = plGetLinuxUSBDevices(devs, devs + max);
+    if (result == 0) // only include RaspBee if no USB devices where found
+    {
+        result += plGetLinuxSerialDevices(devs + result, devs + max);
+    }
 #endif
 
 #ifdef PL_MAC

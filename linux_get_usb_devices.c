@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <unistd.h>
 #include "gcf.h"
 #include "u_sstream.h"
 #include "u_mem.h"
@@ -346,4 +347,32 @@ int plGetLinuxUSBDevices(Device *dev, Device *end)
     closedir(dir);
 
     return result;
+}
+
+int plGetLinuxSerialDevices(Device *dev, Device *end)
+{
+    int sz;
+    struct stat statbuf;
+    char lnkpath[MAX_DEV_PATH_LENGTH];
+    const char *ser0 = "/dev/serial0";
+
+    if (lstat(ser0, &statbuf) == 0)
+    {
+        if (S_ISLNK(statbuf.st_mode))
+        {
+            sz = readlink(ser0, lnkpath, sizeof(lnkpath) - 1);
+            if (sz > 0 && sz < MAX_DEV_PATH_LENGTH - 1)
+            {
+                lnkpath[sz] = '\0';
+                dev->serial[0] = 0;
+                U_memcpy(dev->name, "RaspBee", strlen("RaspBee") + 1);
+                dev->baudrate = PL_BAUDRATE_38400;
+                U_memcpy(dev->path, lnkpath, sz + 1);
+                U_memcpy(dev->stablepath, ser0, strlen(ser0) + 1);
+                return 1;
+            }
+        }
+    }
+
+    return 0;
 }
