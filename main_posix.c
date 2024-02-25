@@ -88,7 +88,7 @@ static int plSetupPort(int fd, int baudrate)
 }
 
 /* Returns a monotonic timestamps in milliseconds */
-PL_time_t PL_Time()
+PL_time_t PL_Time(void)
 {
     PL_time_t res;
     struct timespec ts;
@@ -127,7 +127,7 @@ int PL_ResetFTDI(int num, const char *serialnum)
     return -1;
 }
 
-int PL_ResetRaspBee()
+int PL_ResetRaspBee(void)
 {
 #ifdef HAS_LIBGPIOD
     return plResetRaspBeeLibGpiod();
@@ -213,7 +213,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     return GCF_SUCCESS;
 }
 
-void PL_Disconnect()
+void PL_Disconnect(void)
 {
     PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     if (platform.fd != 0)
@@ -226,7 +226,7 @@ void PL_Disconnect()
     GCF_HandleEvent(platform.gcf, EV_DISCONNECTED);
 }
 
-void PL_ShutDown()
+void PL_ShutDown(void)
 {
     PL_Printf(DBG_DEBUG, "shutdown\n");
     platform.running = 0;
@@ -321,7 +321,7 @@ int PROT_Putc(unsigned char ch)
     return 1;
 }
 
-int PROT_Flush()
+int PROT_Flush(void)
 {
     int n;
     unsigned pos;

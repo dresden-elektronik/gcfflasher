@@ -49,7 +49,7 @@ typedef struct
 static PL_Internal platform;
 
 /*! Returns a monotonic time in milliseconds. */
-PL_time_t PL_Time()
+PL_time_t PL_Time(void)
 {
     return platform.time;
 }
@@ -202,7 +202,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
 }
 
 /*! Closed the serial port connection. */
-void PL_Disconnect()
+void PL_Disconnect(void)
 {
     PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     platform.txpos = 0;
@@ -226,7 +226,7 @@ void PL_Disconnect()
 }
 
 /*! Shuts down platform layer (ends main loop). */
-void PL_ShutDown()
+void PL_ShutDown(void)
 {
     platform.running = 0;
 }
@@ -238,7 +238,7 @@ int PL_ResetFTDI(int num, const char *serialnum)
 }
 
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
-int PL_ResetRaspBee()
+int PL_ResetRaspBee(void)
 {
     return -1;
 }
@@ -318,7 +318,7 @@ int PROT_Putc(unsigned char ch)
     return 0;
 }
 
-int PROT_Flush()
+int PROT_Flush(void)
 {
     int result = 0;
 

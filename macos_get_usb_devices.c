@@ -97,7 +97,6 @@ static int queryFromSystemProfiler(Device *dev, Device *end)
     size_t n;
     U_SStream ss;
     U_SStream line;
-    char ch;
     unsigned i;
     enum query_state state;
     int result;

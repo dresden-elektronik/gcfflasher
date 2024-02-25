@@ -137,12 +137,12 @@ typedef struct GCF_t
 
 static DeviceType gcfGetDeviceType(GCF *gcf);
 static void gcfRetry(GCF *gcf);
-static void gcfPrintHelp();
+static void gcfPrintHelp(void);
 static GCF_Status gcfProcessCommandline(GCF *gcf);
 static void gcfGetDevices(GCF *gcf);
-static void gcfCommandResetUart();
-static void gcfCommandQueryStatus();
-static void gcfCommandQueryFirmwareVersion();
+static void gcfCommandResetUart(void);
+static void gcfCommandQueryStatus(void);
+static void gcfCommandQueryFirmwareVersion(void);
 static void ST_Void(GCF *gcf, Event event);
 static void ST_Init(GCF *gcf, Event event);
 
@@ -1427,7 +1427,7 @@ static void gcfRetry(GCF *gcf)
     }
 }
 
-static void gcfPrintHelp()
+static void gcfPrintHelp(void)
 {
     const char *usage =
     "usage: GCFFlasher <options>\n"
@@ -1787,7 +1787,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     return ret;
 }
 
-static void gcfCommandResetUart()
+static void gcfCommandResetUart(void)
 {
     const unsigned char cmd[] = {
         0x0B, // command: write parmater
@@ -1804,7 +1804,7 @@ static void gcfCommandResetUart()
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
 
-static void gcfCommandQueryStatus()
+static void gcfCommandQueryStatus(void)
 {
     static unsigned char seq = 1;
 
@@ -1821,7 +1821,7 @@ static void gcfCommandQueryStatus()
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
 
-static void gcfCommandQueryFirmwareVersion()
+static void gcfCommandQueryFirmwareVersion(void)
 {
     const unsigned char cmd[] = {
         0x0D, // command: write parmater

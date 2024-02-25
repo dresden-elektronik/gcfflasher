@@ -81,7 +81,7 @@ void put_hex(unsigned char ch, char *buf);
  */
 
 /*! Returns a monotonic time in milliseconds. */
-PL_time_t PL_Time();
+PL_time_t PL_Time(void);
 
 /*! Lets the programm sleep for \p ms milliseconds. */
 void PL_MSleep(unsigned long ms);
@@ -121,16 +121,16 @@ int PL_GetDevices(Device *devs, unsigned max);
 GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate);
 
 /*! Closed the serial port connection. */
-void PL_Disconnect();
+void PL_Disconnect(void);
 
 /*! Shuts down platform layer (ends main loop). */
-void PL_ShutDown();
+void PL_ShutDown(void);
 
 /*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
 int PL_ResetFTDI(int num, const char *serialnum);
 
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
-int PL_ResetRaspBee();
+int PL_ResetRaspBee(void);
 
 int PL_ReadFile(const char *path, unsigned char *buf, unsigned long buflen);
 

@@ -28,7 +28,7 @@ void PROT_Packet(const unsigned char *data, unsigned len);
  */
 int PROT_Write(const unsigned char *data, unsigned len);
 int PROT_Putc(unsigned char ch);
-int PROT_Flush();
+int PROT_Flush(void);
 
 
 #endif /* PROTOCOL_H */

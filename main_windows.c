@@ -94,7 +94,7 @@ long __divdi3(long n, long d)
 #endif
 
 /*! Returns a monotonic time in milliseconds. */
-PL_time_t PL_Time()
+PL_time_t PL_Time(void)
 {
     if (platform.frequencyValid)
     {
@@ -543,7 +543,7 @@ Exit1:
 }
 
 /*! Closed the serial port connection. */
-void PL_Disconnect()
+void PL_Disconnect(void)
 {
     PL_Printf(DBG_DEBUG, "PL_Disconnect\n");
     if (platform.fd != INVALID_HANDLE_VALUE)
@@ -556,7 +556,7 @@ void PL_Disconnect()
 }
 
 /*! Shuts down platform layer (ends main loop). */
-void PL_ShutDown()
+void PL_ShutDown(void)
 {
     platform.running = 0;
 }
@@ -655,7 +655,7 @@ err_close:
 }
 
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
-int PL_ResetRaspBee()
+int PL_ResetRaspBee(void)
 {
     return -1;
 }
@@ -867,7 +867,7 @@ int PROT_Putc(unsigned char ch)
     return 0;
 }
 
-int PROT_Flush()
+int PROT_Flush(void)
 {
     int result = 0;
 
