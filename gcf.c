@@ -931,7 +931,8 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             else
             {
                 Assert(gcf->file.gcfFileSize > offset);
-                gcf->remaining = gcf->file.gcfFileSize - offset;
+                gcf->remaining = (unsigned)(gcf->file.gcfFileSize - offset);
+                Assert(gcf->remaining < 65535);
                 length = length < gcf->remaining ? length : (unsigned short)gcf->remaining;
                 Assert(length > 0);
             }
@@ -1210,6 +1211,7 @@ int GCF_ParseFile(GCF_File *file)
         totalSize = U_bstream_get_u32_le(bs);
         Assert(totalSize == file->gcfFileSize);
         imageSize = U_bstream_get_u32_le(bs);
+        (void)imageSize;
         imageType = U_bstream_get_u32_le(bs);
         imageTargetAddress = U_bstream_get_u32_le(bs);
         imagePlainSize = U_bstream_get_u32_le(bs);
@@ -1284,7 +1286,7 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
         }
     }
 
-    PROT_ReceiveFlagged(&gcf->rxstate, data, len);
+    PROT_ReceiveFlagged(&gcf->rxstate, data, (unsigned)len);
 }
 
 void NET_Received(int client_id, const unsigned char *buf, unsigned bufsize)
@@ -1648,7 +1650,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                         return GCF_FAILED;
                     }
 
-                    gcf->maxTime = longval;
+                    gcf->maxTime = (PL_time_t)longval;
                     gcf->maxTime *= 1000;
                     gcf->maxTime += gcf->startTime;
 

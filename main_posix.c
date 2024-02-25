@@ -66,21 +66,21 @@ static int plSetupPort(int fd, int baudrate)
 
     tcgetattr(fd, &options);
 
-    cfsetispeed(&options, baudrate);
-    cfsetospeed(&options, baudrate);
+    cfsetispeed(&options, (speed_t)baudrate);
+    cfsetospeed(&options, (speed_t)baudrate);
 
     cfmakeraw(&options);
     /* Enable the receiver and set local mode... */
     options.c_cflag |= (CLOCAL | CREAD);
 
     // No parity 8N1
-    options.c_cflag &= ~PARENB;
-    options.c_cflag &= ~CSTOPB;
-    options.c_cflag &= ~CSIZE;
-    options.c_cflag |= CS8;
+    options.c_cflag &= (tcflag_t)~PARENB;
+    options.c_cflag &= (tcflag_t)~CSTOPB;
+    options.c_cflag &= (tcflag_t)~CSIZE;
+    options.c_cflag |= (tcflag_t)CS8;
 
     /* disable hardware control flow */
-    options.c_cflag &= ~CRTSCTS;
+    options.c_cflag &= (tcflag_t)~CRTSCTS;
 
     tcsetattr(fd, TCSANOW, &options);
 

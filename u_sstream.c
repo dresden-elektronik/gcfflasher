@@ -248,8 +248,8 @@ void U_sstream_put_long(U_SStream *ss, long num)
 {
     int i;
     int pos;
-    int remainder;
-    long int n;
+    long remainder;
+    long n;
     unsigned char buf[24];
 
     if (ss->status != U_SSTREAM_OK)
@@ -267,7 +267,7 @@ void U_sstream_put_long(U_SStream *ss, long num)
         remainder = n % 10;
         remainder = remainder < 0 ? -remainder : remainder;
         n = n / 10;
-        buf[pos++] = '0' + remainder;
+        buf[pos++] = '0' + (unsigned char)remainder;
     }
     while (n);
 
@@ -279,7 +279,7 @@ void U_sstream_put_long(U_SStream *ss, long num)
 
     for (i = pos; i > 0; i--) /* reverse copy */
     {
-        ss->str[ss->pos++] = buf[i - 1];
+        ss->str[ss->pos++] = (char)buf[i - 1];
     }
 
     ss->str[ss->pos] = '\0';
@@ -295,9 +295,9 @@ void U_sstream_put_longlong(U_SStream *ss, long long num)
 {
     int i;
     int pos;
-    int remainder;
+    long remainder;
     long long n;
-    unsigned char buf[24];
+    char buf[24];
 
     if (ss->status != U_SSTREAM_OK)
         return;
@@ -314,7 +314,7 @@ void U_sstream_put_longlong(U_SStream *ss, long long num)
         remainder = n % 10;
         remainder = remainder < 0 ? -remainder : remainder;
         n = n / 10;
-        buf[pos++] = '0' + remainder;
+        buf[pos++] = (char)('0' + remainder);
     }
     while (n);
 
@@ -342,8 +342,8 @@ void U_sstream_put_ulonglong(U_SStream *ss, unsigned long long num)
 {
     int i;
     int pos;
-    int remainder;
-    unsigned char buf[24];
+    unsigned long long remainder;
+    char buf[24];
 
     if (ss->status != U_SSTREAM_OK)
         return;
@@ -356,7 +356,7 @@ void U_sstream_put_ulonglong(U_SStream *ss, unsigned long long num)
     {
         remainder = num % 10;
         num = num / 10;
-        buf[pos++] = '0' + remainder;
+        buf[pos++] = (char)('0' + remainder);
     }
     while (num);
 
@@ -535,7 +535,7 @@ void U_sstream_put_double(U_SStream *ss, double num, int precision)
         b = (long long)(frac * prec);
         b = b % 10;
         prec *= 10;
-        buf[i++] = b + '0';
+        buf[i++] = (char)(b + '0');
     }
     buf[i] = '\0';
 
@@ -547,7 +547,7 @@ void U_sstream_put_double(U_SStream *ss, double num, int precision)
         U_sstream_put_str(ss, &buf[0]);
 }
 
-static const char _hex_table[16] = {
+static const char ss_hex_table[16] = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
 };
 
@@ -568,9 +568,9 @@ void U_sstream_put_hex(U_SStream *ss, const void *data, unsigned size)
     for (i = 0; i < size; i++)
     {
         nib = buf[i];
-        ss->str[ss->pos] = _hex_table[(nib & 0xF0) >> 4];
+        ss->str[ss->pos] = ss_hex_table[(nib & 0xF0) >> 4];
         ss->pos++;
-        ss->str[ss->pos] = _hex_table[(nib & 0x0F)];
+        ss->str[ss->pos] = ss_hex_table[(nib & 0x0F)];
         ss->pos++;
     }
 
@@ -616,7 +616,7 @@ long U_strtol(const char *s, unsigned len, const char **endp, int *err)
     ch = 0;
     result = 0;
 
-    max = ~0;
+    max = ~0UL;
     max >>= 1;
 
     if (len == 0)
@@ -637,14 +637,14 @@ long U_strtol(const char *s, unsigned len, const char **endp, int *err)
 
     for (; (unsigned)i < len; i++)
     {
-        ch = s[i];
+        ch = (unsigned char)s[i];
         if (ch < '0' || ch > '9')
             break;
 
         ch = ch - '0';
-        e |= (result * 10 + ch < result) ? 2 : 0; /* overflow */
+        e |= (result * 10 + (unsigned)ch < result) ? 2 : 0; /* overflow */
         result *= 10;
-        result += ch;
+        result += (unsigned)ch;
     }
 
     if      (i == 1 && *s == '-') e |= 1;

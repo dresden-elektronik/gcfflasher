@@ -63,9 +63,9 @@ const unsigned char *get_u16_le(const unsigned char *in, unsigned short *out)
 const unsigned char *get_u32_le(const unsigned char *in, unsigned long *out)
 {
     *out = in[0] & 0xFF;
-    *out |= (in[1] << 8)  & 0x0000FF00;
-    *out |= (in[2] << 16) & 0x00FF0000;
-    *out |= (in[3] << 24) & 0xFF000000;
+    *out |= ((unsigned long)in[1] << 8UL)  & 0x0000FF00UL;
+    *out |= ((unsigned long)in[2] << 16UL) & 0x00FF0000UL;
+    *out |= ((unsigned long)in[3] << 24UL) & 0xFF000000UL;
     return in + 4;
 }
 
