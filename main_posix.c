@@ -23,6 +23,7 @@
 
 #include "gcf.h"
 #include "protocol.h"
+#include "u_sstream.h"
 #include "u_mem.h"
 
 #define RX_BUF_SIZE 1024
@@ -384,9 +385,14 @@ void UI_GetWinSize(unsigned *w, unsigned *h)
 */
 void UI_SetCursor(unsigned x, unsigned y)
 {
-    // ESC[{line};{column}H
+    U_SStream ss;
     char buf[24];
-    sprintf(buf, FMT_ESC "[%u;%uH", (unsigned)y, (unsigned)x);
+    U_sstream_init(&ss, buf, sizeof(buf));
+    U_sstream_put_str(&ss, FMT_ESC "[");
+    U_sstream_put_long(&ss, (long)y);
+    U_sstream_put_str(&ss, ";");
+    U_sstream_put_long(&ss, (long)x);
+    U_sstream_put_str(&ss, "H");
     PL_Print(buf);
 }
 
