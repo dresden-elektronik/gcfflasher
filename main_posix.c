@@ -229,7 +229,7 @@ void PL_Disconnect(void)
 
 void PL_ShutDown(void)
 {
-    PL_Printf(DBG_DEBUG, "shutdown\n");
+    PL_Printf(DBG_DEBUG, "shutting down\n");
     platform.running = 0;
 }
 

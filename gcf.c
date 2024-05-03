@@ -41,7 +41,7 @@
 #define FW_VERSION_PLATFORM_AVR  0x00000500 /* 0x26390500*/
 
 
-/* Bootloader V3.x serial protocol */
+/* Boot-loader V3.x serial protocol */
 #define BTL_MAGIC              0x81
 #define BTL_ID_REQUEST         0x02
 #define BTL_ID_RESPONSE        0x82
@@ -50,7 +50,7 @@
 #define BTL_FW_DATA_REQUEST    0x04
 #define BTL_FW_DATA_RESPONSE   0x84
 
-/* Bootloader V1 */
+/* Boot-loader V1 */
 #define V1_PAGESIZE 256
 
 typedef void (*state_handler_t)(GCF*, Event);
@@ -257,7 +257,7 @@ static void UI_UpdateProgress(GCF *gcf)
     else if (percent < 100) {U_sstream_put_str(&ss, " "); }
 
     U_sstream_put_long(&ss, percent);
-    U_sstream_put_str(&ss, "% uploading ");
+    U_sstream_put_str(&ss, "%% uploading ");
 
     w = wmax - ss.pos - 2;
     ndone = (total - gcf->remaining) * w / total;
@@ -341,20 +341,20 @@ static void ST_Reset(GCF *gcf, Event event)
             }
         }
 
-        /* pretent it worked and jump to bootloader detection */
-        PL_SetTimeout(500); /* for connect bootloader */
+        /* pretend it worked and jump to boot-loader detection */
+        PL_SetTimeout(500); /* for connection to boot-loader */
         GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
     }
     else if (event == EV_FTDI_RESET_FAILED)
     {
-        /* pretent it worked and jump to bootloader detection */
-        PL_SetTimeout(1); /* for connect bootloader */
+        /* pretend it worked and jump to boot-loader detection */
+        PL_SetTimeout(1); /* for connection to boot-loader */
         GCF_HandleEvent(gcf, EV_FTDI_RESET_SUCCESS);
     }
     else if (event == EV_RASPBEE_RESET_FAILED)
     {
-        /* pretent it worked and jump to bootloader detection */
-        PL_SetTimeout(1); /* for connect bootloader */
+        /* pretend it worked and jump to boot-loader detection */
+        PL_SetTimeout(1); /* for connection to boot-loader */
         GCF_HandleEvent(gcf, EV_RASPBEE_RESET_SUCCESS);
     }
     else
@@ -381,19 +381,19 @@ static void ST_ResetUart(GCF *gcf, Event event)
         if ((unsigned char)gcf->ascii[1] == BTL_ID_RESPONSE)
         {
             PL_ClearTimeout();
-            PL_SetTimeout(100); /* for connect bootloader */
+            PL_SetTimeout(100); /* for connection to boot-loader */
             GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
         }
     }
     else if (event == EV_DISCONNECTED)
     {
         PL_ClearTimeout();
-        PL_SetTimeout(500); /* for connect bootloader */
+        PL_SetTimeout(500); /* for connection to boot-loader */
         GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
     }
     else if (event == EV_PKG_UART_RESET)
     {
-        UI_Puts(gcf, "command UART reset done\n");
+        UI_Puts(gcf, "UART reset command done\n");
         if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
         {
             /* due FTDI don't wait for disconnect */
@@ -403,7 +403,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Puts(gcf, "command reset timeout\n");
+        UI_Puts(gcf, "reset command timed out\n");
         gcf->substate = ST_Void;
         PL_Disconnect();
         GCF_HandleEvent(gcf, EV_UART_RESET_FAILED);
@@ -531,7 +531,7 @@ static void ST_Program(GCF *gcf, Event event)
     if (event == EV_ACTION)
     {
         gcfGetDevices(gcf);
-        UI_Puts(gcf, "flash firmware\n");
+        UI_Puts(gcf, "Attempting to flash firmware\n");
         gcf->state = ST_Reset;
         GCF_HandleEvent(gcf, event);
     }
@@ -540,7 +540,7 @@ static void ST_Program(GCF *gcf, Event event)
         if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
         {
             PL_SetTimeout(5000);
-            gcf->state = ST_BootloaderQuery; /* wait for bootloader message */
+            gcf->state = ST_BootloaderQuery; /* wait for boot-loader message */
         }
         else
         {
@@ -569,7 +569,7 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
             // todo retry, a couple of times and revert to gcfRetry()
             PL_SetTimeout(500);
             ss = UI_StringStream(gcf);
-            U_sstream_put_str(ss, "retry connect bootloader ");
+            U_sstream_put_str(ss, "retrying connection to boot-loader ");
             U_sstream_put_str(ss, gcf->devpath);
             U_sstream_put_str(ss, "\n");
             UI_Puts(gcf, ss->str);
@@ -577,9 +577,9 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
     }
     else if (event == EV_RX_ASCII)
     {
-        /* short cut if we are already in bootloader */
+        /* short cut if we are already in boot-loader */
         PL_ClearTimeout();
-        PL_SetTimeout(100); /* for connect bootloader */
+        PL_SetTimeout(100); /* for connection to boot-loader */
 
         gcf->state = ST_BootloaderQuery;
         gcf->substate = ST_Void;
@@ -607,16 +607,16 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
     {
         if (++gcf->retry == 3)
         {
-            UI_Puts(gcf, "query bootloader failed\n");
+            UI_Puts(gcf, "querying of boot-loader failed\n");
             gcfRetry(gcf);
         }
         else if (gcf->file.gcfFileType < 30)
         {
-            /* 2) V1 Bootloader of ConBee II
+            /* 2) V1 Boot-loader of ConBee II
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            UI_Puts(gcf, "query bootloader id V1\n");
+            UI_Puts(gcf, "querying of boot-loader id V1\n");
 
             buf[0] = 'I';
             buf[1] = 'D';
@@ -626,11 +626,11 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
         }
         else if (gcf->file.gcfFileType >= 30)
         {
-            /* 3) V3 Bootloader of RaspBee II, Hive
+            /* 3) V3 Boot-loader of RaspBee II, Hive
                   Query the id here, after initial timeout. This also
                   catches cases where no firmware was installed.
             */
-            UI_Puts(gcf, "query bootloader id V3\n");
+            UI_Puts(gcf, "querying of boot-loader id V3\n");
 
             buf[0] = BTL_MAGIC;
             buf[1] = BTL_ID_REQUEST;
@@ -643,10 +643,10 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
         if (gcf->wp > 32 && gcf->ascii[gcf->wp - 1] == '\n')
         {
             U_sstream_init(&ss1, &gcf->ascii[0], gcf->wp);
-            if (U_sstream_find(&ss1, "Bootloader"))
+            if (U_sstream_find(&ss1, "Boot-loader"))
             {
                 PL_ClearTimeout();
-                UI_Puts(gcf, "bootloader detected\n");
+                UI_Puts(gcf, "boot-loader detected\n");
 
                 gcf->state = ST_V1ProgramSync;
                 GCF_HandleEvent(gcf, EV_ACTION);
@@ -664,7 +664,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             get_u32_le((unsigned char*)&gcf->ascii[6], &appCrc);
 
             ss = UI_StringStream(gcf);
-            U_sstream_put_str(ss, "bootloader version 0x");
+            U_sstream_put_str(ss, "boot-loader version 0x");
             U_sstream_put_u32hex(ss, btlVersion);
             U_sstream_put_str(ss, ", app crc 0x");
             U_sstream_put_u32hex(ss, appCrc);
@@ -708,7 +708,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
         {
             PL_ClearTimeout();
             ss = UI_StringStream(gcf);
-            U_sstream_put_str(ss, "bootloader synced: ");
+            U_sstream_put_str(ss, "boot-loader synchronized: ");
             U_sstream_put_str(ss, gcf->ascii);
             U_sstream_put_str(ss, "\n");
             UI_Puts(gcf, ss->str);
@@ -722,7 +722,7 @@ static void ST_V1ProgramSync(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        UI_Puts(gcf, "failed to sync bootloader\n");
+        UI_Puts(gcf, "failed to synchronize boot-loader\n");
         gcfRetry(gcf);
     }
 }
@@ -797,7 +797,7 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         if ((gcf->remaining - size) == 0)
         {
             gcf->state = ST_V1ProgramValidate;
-            UI_Puts(gcf, "\ndone, wait validation...\n");
+            UI_Puts(gcf, "\ndone, awaiting validation...\n");
             PL_SetTimeout(25600);
         }
         else
@@ -821,7 +821,7 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event)
 
         if (gcf->wp > 6 && U_sstream_find(&ss, "#VALID CRC"))
         {
-            UI_Puts(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET);
+            UI_Puts(gcf, FMT_GREEN "firmware successfully written\n" FMT_RESET);
             PL_ShutDown();
         }
         else
@@ -965,7 +965,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
 
             if (gcf->remaining == length)
             {
-                UI_Puts(gcf, "\ndone, wait (up to 20 seconds) for verification\n");
+                UI_Puts(gcf, "\ndone, waited (up to 20 seconds) for verification\n");
                 PL_SetTimeout(20000);
                 gcf->state = ST_V3ProgramWaitID;
             }
@@ -1393,7 +1393,7 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
 #endif
     }
 
-    /* further detemine detive type from the GCF header */
+    /* further determine device type from the GCF header */
     if      (ftype == 60) { result = DEV_HIVE; baudrate = PL_BAUDRATE_115200; }
     else if (result == DEV_CONBEE_1 && ftype > 9)                   { result = DEV_UNKNOWN; baudrate = PL_BAUDRATE_38400; }
     else if (result == DEV_RASPBEE_2 && ftype >= 30 && ftype <= 39) { result = DEV_RASPBEE_2; baudrate = PL_BAUDRATE_38400; }
@@ -1567,7 +1567,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 {
                     if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
                     {
-                        PL_Printf(DBG_INFO, "missing argument for parameter -d\n");
+                        PL_Printf(DBG_INFO, "please supply an argument for parameter -d\n");
                         return GCF_FAILED;
                     }
 
@@ -1590,7 +1590,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 
                     if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
                     {
-                        PL_Printf(DBG_INFO, "missing argument for parameter -f\n");
+                        PL_Printf(DBG_INFO, "please supply an argument for parameter -f\n");
                         return GCF_FAILED;
                     }
 
@@ -1612,7 +1612,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                         return GCF_FAILED;
                     }
 
-                    PL_Printf(DBG_INFO, "read file success: %s (%ld bytes)\n", gcf->file.fname, nread);
+                    PL_Printf(DBG_INFO, "read file successfully: %s (%ld bytes)\n", gcf->file.fname, nread);
                     gcf->file.fsize = (unsigned long)nread;
 
                     if (GCF_ParseFile(&gcf->file) != 0)
@@ -1633,7 +1633,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 {
                     if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
                     {
-                        PL_Printf(DBG_INFO, "missing argument for parameter -t\n");
+                        PL_Printf(DBG_INFO, "please supply an argument for parameter -t\n");
                         return GCF_FAILED;
                     }
 
@@ -1660,7 +1660,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 {
                     if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
                     {
-                        PL_Printf(DBG_INFO, "missing argument for parameter -x\n");
+                        PL_Printf(DBG_INFO, "please supply an argument for parameter -x\n");
                         return GCF_FAILED;
                     }
 
@@ -1673,7 +1673,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 {
                     if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
                     {
-                        PL_Printf(DBG_INFO, "missing argument for parameter -p\n");
+                        PL_Printf(DBG_INFO, "please supply an argument for parameter -p\n");
                         return GCF_FAILED;
                     }
 
@@ -1722,13 +1722,13 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     {
         if (gcf->devpath[0] == '\0')
         {
-            PL_Printf(DBG_INFO, "missing -d argument\n");
+            PL_Printf(DBG_INFO, "please supply the -d argument\n");
             return GCF_FAILED;
         }
 
         if (gcf->file.fname[0] == '\0')
         {
-            PL_Printf(DBG_INFO, "missing -f argument\n");
+            PL_Printf(DBG_INFO, "please supply the -f argument\n");
             return GCF_FAILED;
         }
 
@@ -1745,12 +1745,12 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
         if (gcf->devType == DEV_RASPBEE_1 &&
             (gcf->file.fwVersion & FW_VERSION_PLATFORM_MASK) == FW_VERSION_PLATFORM_R21)
         {
-            PL_Printf(DBG_DEBUG, "assume RaspBee II\n");
+            PL_Printf(DBG_DEBUG, "assuming RaspBee II\n");
             gcf->devType = DEV_RASPBEE_2;
         }
         else if (gcf->devType == DEV_RASPBEE_1 && gcf->file.gcfTargetAddress == 0x5000)
         {
-            PL_Printf(DBG_DEBUG, "assume RaspBee II\n");
+            PL_Printf(DBG_DEBUG, "assuming RaspBee II\n");
             gcf->devType = DEV_RASPBEE_2;
         }
 
@@ -1761,7 +1761,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     {
         if (gcf->devpath[0] == '\0')
         {
-            PL_Printf(DBG_INFO, "missing -d argument\n");
+            PL_Printf(DBG_INFO, "please supply the -d argument\n");
             return GCF_FAILED;
         }
 
@@ -1772,7 +1772,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     {
         if (gcf->devpath[0] == '\0')
         {
-            PL_Printf(DBG_INFO, "missing -d argument\n");
+            PL_Printf(DBG_INFO, "please supply the -d argument\n");
             return GCF_FAILED;
         }
 
@@ -1792,16 +1792,16 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 static void gcfCommandResetUart(void)
 {
     const unsigned char cmd[] = {
-        0x0B, // command: write parmater
+        0x0B, // command: write parameter
         0x03, // seq
         0x00, // status
         0x0C, 0x00, // frame length (12)
         0x05, 0x00, // buffer length (5)
-        0x26, // param: watchdog timout (2 seconds)
+        0x26, // param: watchdog timeout (2 seconds)
         0x02, 0x00, 0x00, 0x00
     };
 
-    PL_Printf(DBG_DEBUG, "send uart reset\n");
+    PL_Printf(DBG_DEBUG, "sending UART reset\n");
 
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
@@ -1811,7 +1811,7 @@ static void gcfCommandQueryStatus(void)
     static unsigned char seq = 1;
 
     unsigned char cmd[] = {
-        0x07, // command: write parmater
+        0x07, // command: write parameter
         0x02, // seq
         0x00, // status
         0x08, 0x00, // frame length (12)
@@ -1826,7 +1826,7 @@ static void gcfCommandQueryStatus(void)
 static void gcfCommandQueryFirmwareVersion(void)
 {
     const unsigned char cmd[] = {
-        0x0D, // command: write parmater
+        0x0D, // command: write parameter
         0x05, // seq
         0x00, // status
         0x09, 0x00, // frame length (9)

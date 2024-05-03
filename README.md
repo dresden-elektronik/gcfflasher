@@ -23,7 +23,7 @@ The sources are POSIX compliant with a small platform specific layer, to make po
 ## Notes
 
 * The current release is not yet included in the deCONZ package.
-* The list command `-l` is in development and only partially implemended.
+* The list command `-l` is in development and only partially implemented.
 * The output logging is not streamlined yet.
 * On macOS the `-d` parameter is `/dev/cu.usbmodemDE...` where ... is the serialnumber.
 

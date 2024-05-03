@@ -28,7 +28,7 @@ int plResetLibFtdi()
     ret = ftdi_usb_open(ftdi, 0x0403, 0x6015);
     if (ret < 0 && ret != -5)
     {
-        fprintf(stderr, "unable to open ftdi device: %d (%s)\n", ret, ftdi_get_error_string(ftdi));
+        fprintf(stderr, "unable to open FTDI device: %d (%s)\n", ret, ftdi_get_error_string(ftdi));
         ftdi_deinit(ftdi);
         return -2;
     }
