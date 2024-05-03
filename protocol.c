@@ -115,7 +115,7 @@ nextTurn:
             if (rx->bufpos >= 2)
             {
                unsigned char crcvalid = 0;
-               /* Checksum bytes are added to the checksum rx->crc - substract them here */
+               /* Checksum bytes are added to the checksum rx->crc - subtract them here */
                rx->crc -= rx->buf[rx->bufpos-1];
                rx->crc -= rx->buf[rx->bufpos-2];
                /* TODO clean this messy condition up */

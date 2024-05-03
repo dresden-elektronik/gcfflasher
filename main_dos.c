@@ -54,7 +54,7 @@ PL_time_t PL_Time(void)
     return platform.time;
 }
 
-/*! Lets the programm sleep for \p ms milliseconds. */
+/*! Lets the program sleep for \p ms milliseconds. */
 void PL_MSleep(unsigned long ms)
 {
     delay((int)ms);

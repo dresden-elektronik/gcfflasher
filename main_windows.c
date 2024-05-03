@@ -76,7 +76,7 @@ void *memset(void *dst, int c, size_t count)
 }
 
 #ifdef _X86_
-/* mingw32 on i686 doesn't have long devision */
+/* mingw32 on i686 doesn't have long division */
 __attribute((externally_visible))
 long __divdi3(long n, long d)
 {
@@ -106,7 +106,7 @@ PL_time_t PL_Time(void)
     return GetTickCount();
 }
 
-/*! Lets the programm sleep for \p ms milliseconds. */
+/*! Lets the program sleep for \p ms milliseconds. */
 void PL_MSleep(unsigned long ms)
 {
     Sleep((DWORD)ms);
@@ -483,7 +483,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     //Setting the Parameters for the SerialPort
     BOOL Status;
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-    Status = GetCommState(platform.fd, &dcbSerialParams); //retreives  the current settings
+    Status = GetCommState(platform.fd, &dcbSerialParams); //retrieves  the current settings
     if (Status == FALSE)
     {
         PL_Printf(DBG_DEBUG, "\nError to Get the Com state\n\n");
@@ -529,7 +529,7 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     Status = SetCommMask(platform.fd, EV_RXCHAR);
     if (Status == FALSE)
     {
-        PL_Printf(DBG_DEBUG, "\nError to in Setting CommMask\n\n");
+        PL_Printf(DBG_DEBUG, "\nError Setting CommMask\n\n");
         goto Exit1;
     }
 
@@ -839,7 +839,7 @@ int PROT_Write(const unsigned char *data, unsigned len)
     if (Status == FALSE)
     {
         DWORD dw = GetLastError();
-        PL_Printf(DBG_DEBUG, "failed write com port, error: 0%08X\n", dw);
+        PL_Printf(DBG_DEBUG, "failed to write to com port, error: 0%08X\n", dw);
         return 0;
     }
 

@@ -2,7 +2,7 @@
 
 
 # This script cross compiles GCFFlasher for all platforms via Docker.
-# The resultung .deb files are stored in debout/
+# The resulting .deb files are stored in debout/
 
 rm -fr debout
 
