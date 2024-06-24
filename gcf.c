@@ -932,7 +932,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             {
                 Assert(gcf->file.gcfFileSize > offset);
                 gcf->remaining = (unsigned)(gcf->file.gcfFileSize - offset);
-                Assert(gcf->remaining < 65535);
+                Assert(gcf->remaining < MAX_GCF_FILE_SIZE);
                 length = length < gcf->remaining ? length : (unsigned short)gcf->remaining;
                 Assert(length > 0);
             }
