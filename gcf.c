@@ -1237,7 +1237,7 @@ int GCF_ParseFile(GCF_File *file)
         return -2;
     }
 
-    if (file->gcfFileSize != (file->fsize - GCF_HEADER_SIZE))
+    if (file->gcfFileSize != (file->fsize - file->dataOffset))
     {
         return -3;
     }
