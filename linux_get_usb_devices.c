@@ -316,7 +316,7 @@ int plGetLinuxUSBDevices(Device *dev, Device *end)
         }
 
         /* copy stable device path */
-        if (snprintf(buf, sizeof(buf), "%s/%s", basedir, entry->d_name) >= sizeof(buf))
+        if (snprintf(buf, sizeof(buf), "%s/%s", basedir, entry->d_name) >= (int)sizeof(buf))
         {
             Assert(!"Device->stablepath is too small");
             continue;
@@ -356,6 +356,9 @@ int plGetLinuxSerialDevices(Device *dev, Device *end)
     struct stat statbuf;
     char lnkpath[MAX_DEV_PATH_LENGTH];
     const char *ser0 = "/dev/serial0";
+
+    if (dev >= end)
+        return 0;
 
     if (lstat(ser0, &statbuf) == 0)
     {
