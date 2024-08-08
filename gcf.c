@@ -35,6 +35,7 @@
 #define FLASH_TYPE_APP_ENCRYPTED             60
 #define FLASH_TYPE_APP_COMPRESSED_ENCRYPTED  70
 #define FLASH_TYPE_BTL_ENCRYPTED             80
+#define FLASH_TYPE_APP_ENCRYPTED_2           90
 
 #define FW_VERSION_PLATFORM_MASK 0x0000FF00
 #define FW_VERSION_PLATFORM_R21  0x00000700 /* 0x26120700*/
@@ -90,6 +91,7 @@ typedef struct GCF_File_t
     unsigned long gcfCrc32;
 
     unsigned char fcontent[MAX_GCF_FILE_SIZE];
+    unsigned dataOffset;
 } GCF_File;
 
 typedef struct UI_Line
@@ -847,7 +849,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
                 0x00, 0x0C, 0x00, 0x00, /* data size */
                 0x00, 0x00, 0x00, 0x00, /* target address */
                 0x00,                   /* file type */
-                0xAA, 0xAA, 0xAA, 0xAA  /* crc32 todo */
+                0xAA, 0xAA, 0xAA, 0xAA  /* crc32 */
         };
 
         PL_MSleep(50);
@@ -858,6 +860,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
         p = put_u32_le(p, &gcf->file.gcfFileSize);
         p = put_u32_le(p, &gcf->file.gcfTargetAddress);
         p = put_u8_le(p, &gcf->file.gcfFileType);
+        p = put_u32_le(p, &gcf->file.gcfCrc32);
         (void)p;
 
         PROT_SendFlagged(cmd, sizeof(cmd));
@@ -944,7 +947,7 @@ static void ST_V3ProgramUpload(GCF *gcf, Event event)
             if (status == 0)
             {
                 Assert(length > 0);
-                U_memcpy(p, &gcf->file.fcontent[GCF_HEADER_SIZE + offset], length);
+                U_memcpy(p, &gcf->file.fcontent[gcf->file.dataOffset + offset], length);
                 p += length;
             }
             else
@@ -1177,6 +1180,8 @@ int GCF_ParseFile(GCF_File *file)
 
     /* newer products have extended format with CRC32 */
     file->gcfCrc32 = 0;
+    file->dataOffset = GCF_HEADER_SIZE;
+
     if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED)
     {
         /*
@@ -1219,6 +1224,12 @@ int GCF_ParseFile(GCF_File *file)
 
         PL_Printf(DBG_DEBUG, "GCF header1: product: 0x%08X, img.type: %u, img.address: 0x%08X, img.data.size: %lu, crc32: 0x%08X\n",
                   magic1, imageType, imageTargetAddress, imagePlainSize, file->gcfCrc32);
+    }
+    else if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED_2)
+    {
+        /* here the CRC32 is part of the header but not of the 'gcfFileSize' */
+        file->gcfCrc32 = U_bstream_get_u32_le(bs);
+        file->dataOffset = GCF_HEADER_SIZE + 4;
     }
 
     if (magic != GCF_MAGIC)
