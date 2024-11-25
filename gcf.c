@@ -871,7 +871,7 @@ static void ST_V3ProgramSync(GCF *gcf, Event event)
         {
             if (gcf->ascii[2] == 0x00) /* success */
             {
-                PL_SetTimeout(1000);
+                PL_SetTimeout(3000);
                 gcf->state = ST_V3ProgramUpload;
             }
         }
