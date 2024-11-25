@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.5)
-project (GCFFlasher VERSION 4.5.1)
+project (GCFFlasher VERSION 4.5.2)
 
 option(USE_NET "Support connection via network sockets" OFF)
 set(COMMON_SRCS
