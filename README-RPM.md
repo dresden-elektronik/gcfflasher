@@ -1,4 +1,5 @@
 # Creating the RPM packages
+Tested with Fedora-40 and RHEL(or it's clones)-9
 ## Requirements
 - mock
 - rpmbuild
