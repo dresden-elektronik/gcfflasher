@@ -34,7 +34,8 @@ if (UNIX)
     target_sources(${PROJECT_NAME} PRIVATE main_posix.c)
 
     if (CMAKE_BUILD_TYPE MATCHES "Debug")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wdeprecated)
+        # -Wpedantic -Wconversion
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wdeprecated)
         target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=undefined -fsanitize=address)
         target_link_options(${PROJECT_NAME} BEFORE PUBLIC -fsanitize=undefined PUBLIC -fsanitize=address)
     endif()
