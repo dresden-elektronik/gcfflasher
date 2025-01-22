@@ -137,7 +137,7 @@ int plResetRaspBeeLibGpiod(void)
         name = fn_gpiod_chip_name(chip);
         label = fn_gpiod_chip_label(chip);
 
-        if (!label || strncmp(label, "pinctrl-bcm", 11) != 0)
+        if (!label || strncmp(label, "pinctrl-", 8) != 0)
         {
             continue;
         }
