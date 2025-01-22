@@ -1361,7 +1361,11 @@ static void GCF_ProcessInput(GCF *gcf)
     unsigned char arg[32];
 
     if (gcf->uiInputSize == 0)
+    {
+        UI_Puts(gcf, "use 'help' to see a list of available commands\n");
         return;
+    }
+
 
     /* echo input line */
     if (gcf->uiInputSize > 0 && gcf->uiInputSize < UI_MAX_INPUT_LENGTH)
@@ -1385,9 +1389,11 @@ static void GCF_ProcessInput(GCF *gcf)
     /* process input line */
     U_sstream_init(&rs, gcf->uiInputLine, gcf->uiInputSize);
 
-    if (U_sstream_starts_with(&rs, "dumpconfig"))
+    if (U_sstream_starts_with(&rs, "help"))
     {
-
+        UI_Puts(gcf, "commands:\n");
+        UI_Puts(gcf, "rp <id> [hex payload]         | read config parameter id (decimal) and optional\n"
+                     "                              | payload as 0x... hex string\n");
     }
     else if (U_sstream_starts_with(&rs, "read ") ||  U_sstream_starts_with(&rs, "rp "))
     {
@@ -1396,7 +1402,7 @@ static void GCF_ProcessInput(GCF *gcf)
         param = U_sstream_get_long(&rs);
         if ((rs.status != U_SSTREAM_OK) || (param > 255))
         {
-            UI_Puts(gcf, "invalid argument for parameter number\n");
+            UI_Puts(gcf, "invalid argument for parameter <id>\n");
         }
         else
         {
@@ -1678,7 +1684,7 @@ static void gcfPrintHelp(void)
 #else
     " -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee\n"
 #ifdef USE_NET
-    " -i <interface>  listen interface\n"
+    " -n <interface>  listen interface\n"
     "                 when only -p is specified default is 0.0.0.0 for any interface\n"
     " -p <port>       listen port\n"
 #endif
@@ -1687,7 +1693,10 @@ static void gcfPrintHelp(void)
 //    " -s <serial>     serial number to use\n"
     " -t <timeout>    retry until timeout (seconds) is reached\n"
     " -l              list devices\n"
-//    " -x <loglevel>   debug log level 0, 1, 3\n"
+    " -x <loglevel>   debug log level 0, 1, 3\n"
+#ifdef PL_LINUX
+    " -i              interactive mode for debugging\n"
+#endif
     " -h -?           print this help\n";
 
 #ifdef __WATCOMC__
