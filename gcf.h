@@ -45,6 +45,18 @@ typedef enum
     PL_BAUDRATE_115200 = 115200
 } PL_Baudrate;
 
+#define PL_KEY_BACKSPACE  0x07FFFF00
+#define PL_KEY_DELETE     0x07FFFF01
+#define PL_KEY_TAB        0x09
+#define PL_KEY_ENTER      0x0A
+#define PL_KEY_UP         0x07FFFF04
+#define PL_KEY_DOWN       0x07FFFF05
+#define PL_KEY_LEFT       0x07FFFF06
+#define PL_KEY_RIGHT      0x07FFFF07
+#define PL_KEY_ESC        0x1B
+#define PL_KEY_POS1       0x07FFFF09
+#define PL_KEY_END        0x07FFFF0A
+
 typedef struct GCF_t GCF;
 typedef struct GCF_File_t GCF_File;
 
@@ -69,6 +81,8 @@ void GCF_Exit(GCF *gcf);
 
 /*! Called from platform layer when \p data has been received, \p len must be > 0. */
 void GCF_Received(GCF *gcf, const unsigned char *data, int len);
+/*! Called from platform layer for keyboard input. */
+void GCF_KeyboardInput(GCF *gcf, unsigned long codepoint);
 void GCF_HandleEvent(GCF *gcf, Event event);
 
 int GCF_ParseFile(GCF_File *file);

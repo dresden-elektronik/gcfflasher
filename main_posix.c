@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h> /* va_list, ... */
 #include <poll.h>
 #include <fcntl.h> /* open() */
@@ -42,6 +43,7 @@ typedef struct
 } PL_Internal;
 
 static PL_Internal platform;
+static struct termios restore_attr;
 
 #ifdef PL_LINUX
 int plGetLinuxUSBDevices(Device *dev, Device *end);
@@ -229,7 +231,7 @@ void PL_Disconnect(void)
 
 void PL_ShutDown(void)
 {
-    PL_Printf(DBG_DEBUG, "shutdown\n");
+    PL_Printf(DBG_DEBUG, "PL_Shutdown\n");
     platform.running = 0;
 }
 
@@ -396,18 +398,38 @@ void UI_SetCursor(unsigned x, unsigned y)
     PL_Print(buf);
 }
 
+static void PL_InitKeyboard(void)
+{
+    struct termios attr;
+    tcgetattr(STDIN_FILENO, &attr);
+    tcgetattr(STDIN_FILENO, &restore_attr);
+    attr.c_lflag &= ~(ICANON | ECHO); /* turn off canonical mode */
+    tcsetattr(STDIN_FILENO, TCSANOW, &attr);
+}
+
+static void PL_AtExit(void)
+{
+    restore_attr.c_lflag |= (ICANON | ECHO); /* turn on canonical mode */
+    tcsetattr(STDIN_FILENO, TCSANOW, &restore_attr);
+}
+
 static int PL_Loop(GCF *gcf)
 {
+    int nfds;
     int ret;
     int nread;
-    struct pollfd fds;
+    struct pollfd fds[2];
+    unsigned codepoint;
+
+    PL_InitKeyboard();
 
     memset(&platform, 0, sizeof(platform));
     platform.gcf = gcf;
 
     platform.running = 1;
 
-    fds.events = POLLIN;
+    fds[0].events = POLLIN;
+    fds[1].events = POLLIN;
 
     GCF_HandleEvent(gcf, EV_PL_STARTED);
 
@@ -415,10 +437,16 @@ static int PL_Loop(GCF *gcf)
     {
         GCF_HandleEvent(gcf, EV_PL_LOOP);
 
-        /* when no device is connected, poll STDIN, to get poll() timeout */
-        fds.fd = platform.fd != 0 ? platform.fd : STDIN_FILENO;
+        nfds = 0;
 
-        ret = poll(&fds, 1, 5);
+        /* always poll STDIN at fds[0], to get poll() timeout and keyboard input */
+        fds[nfds++].fd = STDIN_FILENO;
+
+        /* when device is connected fds[1] */
+        if (platform.fd != 0)
+            fds[nfds++].fd = platform.fd;
+
+        ret = poll(&fds[0], nfds, 5);
 
         if (ret < 0)
         {
@@ -440,25 +468,76 @@ static int PL_Loop(GCF *gcf)
             continue;
         }
 
-        if (fds.revents & (POLLHUP | POLLERR | POLLNVAL) && platform.fd != 0)
+        if (nfds == 2) /* device connected */
         {
-            PL_Disconnect();
-            continue;
-        }
-
-        if (fds.revents & POLLIN)
-        {
-            nread = (int)read(fds.fd, platform.rxbuf, sizeof(platform.rxbuf));
-
-            if (nread > 0)
+            if (fds[1].revents & (POLLHUP | POLLERR | POLLNVAL))
             {
-                GCF_Received(gcf, platform.rxbuf, nread);
+                PL_Disconnect();
+                continue;
+            }
+
+            if (fds[1].revents & POLLIN)
+            {
+                nread = (int) read(fds[1].fd, platform.rxbuf, sizeof(platform.rxbuf));
+
+                if (nread > 0)
+                {
+                    GCF_Received(gcf, platform.rxbuf, nread);
+                }
+            }
+
+            if (platform.tx_rp != platform.tx_wp)
+            {
+                PROT_Flush();
             }
         }
 
-        if (platform.fd && platform.tx_rp != platform.tx_wp)
+        /* keyboard input */
+        if (fds[0].revents & POLLIN)
         {
-            PROT_Flush();
+            codepoint = 0;
+            nread = (int) read(fds[0].fd, platform.rxbuf, sizeof(platform.rxbuf));
+
+            /* simplified input for ASCII and navigation keys */
+
+            if (nread == 1)
+            {
+                codepoint = platform.rxbuf[0];
+                if (codepoint >= 32 && codepoint <= 126)
+                { } /* ASCII */
+                else if (codepoint == 0x09) { codepoint = PL_KEY_TAB; }
+                else if (codepoint == 0x0A) { codepoint = PL_KEY_ENTER; }
+                else if (codepoint == 0x1B) { codepoint = PL_KEY_ESC; }
+                else if (codepoint == 0x7F) { codepoint = PL_KEY_BACKSPACE; }
+                else                        { codepoint = 0; }
+            }
+            else if (nread >= 3 && platform.rxbuf[0] == 0x1B && platform.rxbuf[1] == 0x5B)
+            {
+                switch (platform.rxbuf[2])
+                {
+                    case 0x33: codepoint = PL_KEY_DELETE; break;
+                    case 0x41: codepoint = PL_KEY_UP; break;
+                    case 0x42: codepoint = PL_KEY_DOWN; break;
+                    case 0x43: codepoint = PL_KEY_RIGHT; break;
+                    case 0x44: codepoint = PL_KEY_LEFT; break;
+                    case 0x48: codepoint = PL_KEY_POS1; break;
+                    case 0x46: codepoint = PL_KEY_END; break;
+                }
+            }
+
+            if (codepoint)
+                GCF_KeyboardInput(gcf, codepoint);
+
+#ifndef NDEBUG
+            if (codepoint == 0)
+            {
+                for (int b = 0; b < nread; b++)
+                {
+                    PL_Printf(DBG_INFO, "IN: [%d] = 0x%02X (%c) \n", b, platform.rxbuf[b] & 0xFF,
+                              platform.rxbuf[b] & 0xFF);
+                }
+            }
+#endif
         }
     }
 
@@ -470,6 +549,9 @@ static int PL_Loop(GCF *gcf)
 int main(int argc, char *argv[])
 {
     GCF *gcf;
+
+    atexit(PL_AtExit);
+
     gcf = GCF_Init(argc, argv);
     if (gcf == NULL)
         return 2;

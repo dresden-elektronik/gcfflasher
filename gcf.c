@@ -24,6 +24,7 @@
 #include "protocol.h"
 #include "net.h"
 
+#define UI_MAX_INPUT_LENGTH 1024
 #define UI_MAX_LINE_LENGTH 255
 #define UI_MAX_LINES 32
 
@@ -113,6 +114,12 @@ typedef struct GCF_t
     unsigned uiCurrentLine;
     UI_Line uiLines[UI_MAX_LINES];
     U_SStream uiStringStream;
+    int uiDebugLevel;
+    int uiInteractive;
+
+    int uiInputPos;
+    int uiInputSize;
+    char uiInputLine[UI_MAX_INPUT_LENGTH];
 
     int retry;
 
@@ -136,7 +143,6 @@ typedef struct GCF_t
     GCF_File file;
 } GCF;
 
-
 static DeviceType gcfGetDeviceType(GCF *gcf);
 static void gcfRetry(GCF *gcf);
 static void gcfPrintHelp(void);
@@ -145,6 +151,7 @@ static void gcfGetDevices(GCF *gcf);
 static void gcfCommandResetUart(void);
 static void gcfCommandQueryStatus(void);
 static void gcfCommandQueryFirmwareVersion(void);
+static void gcfCommandQueryParameter(unsigned char seq, unsigned char id, unsigned char *data, unsigned dataLength);
 static void ST_Void(GCF *gcf, Event event);
 static void ST_Init(GCF *gcf, Event event);
 
@@ -176,6 +183,7 @@ U_SStream *UI_StringStream(GCF *gcf);
 void U_sstream_put_u32hex(U_SStream *ss, unsigned long val);
 
 static GCF gcfLocal;
+static unsigned char gcfSeq = 1;
 
 
 static const char hex_lookup[16] =
@@ -209,6 +217,38 @@ void UI_Puts(GCF *gcf, const char *str)
     {
         PL_Print(str);
     }
+}
+
+/* helper to get hex byte */
+static int GCF_sstream_get_hexbyte(U_SStream *ss, unsigned char *byte)
+{
+    int i;
+    unsigned tmp;
+
+    *byte = 0;
+
+    if (ss->status != U_SSTREAM_OK)
+        return 0;
+
+    if (ss->len < (ss->pos + 2))
+        return 0;
+
+    for (i = 0; i < 2; i++)
+    {
+        *byte <<= 4;
+        tmp = (unsigned)ss->str[ss->pos + i];
+        if      (tmp >= '0' && tmp <= '9') tmp -= '0';
+        else if (tmp >= 'a' && tmp <= 'f') { tmp -= 'a'; tmp += 10; }
+        else if (tmp >= 'A' && tmp <= 'F') { tmp -= 'A'; tmp += 10; }
+        else
+        {
+            return 0;
+        }
+        *byte += (unsigned char)(tmp);
+    }
+
+    ss->pos += 2;
+    return 1;
 }
 
 U_SStream *UI_StringStream(GCF *gcf)
@@ -1048,7 +1088,11 @@ static void ST_Connected(GCF *gcf, Event event)
 {
     if (event == EV_TIMEOUT)
     {
-        gcfCommandQueryStatus();
+        if (gcf->uiInteractive == 0)
+        {
+            gcfCommandQueryStatus();
+        }
+
         PL_SetTimeout(10000);
     }
     else if (event == EV_DISCONNECTED)
@@ -1071,6 +1115,11 @@ GCF *GCF_Init(int argc, char *argv[])
     gcf->maxTime = 0;
     gcf->devCount = 0;
     gcf->task = T_NONE;
+    gcf->uiInteractive = 0;
+    gcf->uiDebugLevel = 0;
+    gcf->uiInputPos = 0;
+    gcf->uiInputSize = 0;
+    gcf->uiInputLine[0] = '\0';
     gcf->state = ST_Init;
     gcf->substate = ST_Void;
     gcf->argc = argc;
@@ -1300,6 +1349,185 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
     PROT_ReceiveFlagged(&gcf->rxstate, data, (unsigned)len);
 }
 
+static void GCF_ProcessInput(GCF *gcf)
+{
+    U_SStream rs;
+    U_SStream *ss;
+
+    unsigned w;
+    unsigned h;
+    long param;
+    unsigned argLength;
+    unsigned char arg[32];
+
+    if (gcf->uiInputSize == 0)
+    {
+        UI_Puts(gcf, "use 'help' to see a list of available commands\n");
+        return;
+    }
+
+
+    /* echo input line */
+    if (gcf->uiInputSize > 0 && gcf->uiInputSize < UI_MAX_INPUT_LENGTH)
+    {
+        UI_GetWinSize(&w, &h);
+
+        ss = UI_StringStream(gcf);
+
+        U_sstream_put_str(ss, "\n> ");
+        U_sstream_put_str(ss, gcf->uiInputLine);
+
+        for (;ss->pos < w && (ss->pos < (ss->len - 2)); )
+        {
+            U_sstream_put_str(ss, " ");
+        }
+
+        U_sstream_put_str(ss, "\n");
+        UI_Puts(gcf, ss->str);
+    }
+
+    /* process input line */
+    U_sstream_init(&rs, gcf->uiInputLine, gcf->uiInputSize);
+
+    if (U_sstream_starts_with(&rs, "help"))
+    {
+        UI_Puts(gcf, "commands:\n");
+        UI_Puts(gcf, "rp <id> [hex payload]         | read config parameter id (decimal) and optional\n"
+                     "                              | payload as 0x... hex string\n");
+    }
+    else if (U_sstream_starts_with(&rs, "read ") ||  U_sstream_starts_with(&rs, "rp "))
+    {
+        U_sstream_find(&rs, " ");
+        U_sstream_skip_whitespace(&rs);
+        param = U_sstream_get_long(&rs);
+        if ((rs.status != U_SSTREAM_OK) || (param > 255))
+        {
+            UI_Puts(gcf, "invalid argument for parameter <id>\n");
+        }
+        else
+        {
+            U_sstream_skip_whitespace(&rs);
+            ss = UI_StringStream(gcf);
+
+            U_sstream_put_str(ss, "> reading parameter: ");
+            U_sstream_put_long(ss, param);
+
+            argLength = 0;
+            if (U_sstream_starts_with(&rs, "0x"))
+            {
+                U_sstream_seek(&rs, U_sstream_pos(&rs) + 2);
+                unsigned char byte;
+                for (; GCF_sstream_get_hexbyte(&rs, &byte) && argLength < sizeof(arg);)
+                {
+                    arg[argLength] = byte;
+                    argLength++;
+                    U_sstream_put_str(ss, " ");
+                    U_sstream_put_long(ss, (long)byte);
+                }
+            }
+
+            U_sstream_put_str(ss, "\n");
+            UI_Puts(gcf, ss->str);
+
+            gcfCommandQueryParameter(gcfSeq++, (unsigned char)param, arg, argLength);
+        }
+    }
+
+    gcf->uiInputPos = 0;
+    gcf->uiInputSize = 0;
+}
+
+/* Very basic TUI keyboard input support. */
+void GCF_KeyboardInput(GCF *gcf, unsigned long codepoint)
+{
+    int i;
+    unsigned w;
+    unsigned h;
+
+    if (codepoint == PL_KEY_ENTER)
+    {
+        GCF_ProcessInput(gcf);
+    }
+    else if (codepoint == PL_KEY_BACKSPACE)
+    {
+        if (gcf->uiInputPos > 0 && gcf->uiInputSize > 0)
+        {
+            for (i = 0; i < (gcf->uiInputSize - gcf->uiInputPos); i++)
+            {
+                gcf->uiInputLine[gcf->uiInputPos + i - 1] = gcf->uiInputLine[gcf->uiInputPos + i];
+            }
+
+            gcf->uiInputPos--;
+            gcf->uiInputSize--;
+            gcf->uiInputLine[gcf->uiInputSize] = '\0';
+        }
+    }
+    else if (codepoint == PL_KEY_DELETE)
+    {
+        if (gcf->uiInputPos >= 0 && gcf->uiInputPos < gcf->uiInputSize && gcf->uiInputSize > 0)
+        {
+            for (i = 0; i < (gcf->uiInputSize - gcf->uiInputPos); i++)
+            {
+                gcf->uiInputLine[gcf->uiInputPos + i] = gcf->uiInputLine[gcf->uiInputPos + i + 1];
+            }
+
+            gcf->uiInputSize--;
+            gcf->uiInputLine[gcf->uiInputSize] = '\0';
+        }
+    }
+    else if (codepoint == PL_KEY_LEFT)
+    {
+        if (gcf->uiInputPos > 0)
+            gcf->uiInputPos--;
+    }
+    else if (codepoint == PL_KEY_RIGHT)
+    {
+        if (gcf->uiInputPos < gcf->uiInputSize)
+            gcf->uiInputPos++;
+    }
+    else if (codepoint == PL_KEY_POS1)
+    {
+        gcf->uiInputPos = 0;
+    }
+    else if (codepoint == PL_KEY_END)
+    {
+        gcf->uiInputPos = gcf->uiInputSize;
+    }
+    else if (codepoint >= 32 && codepoint <= 126)
+    {
+        if (gcf->uiInputSize < UI_MAX_INPUT_LENGTH)
+        {
+            for (i = 0; i < (gcf->uiInputSize - gcf->uiInputPos); i++)
+            {
+                gcf->uiInputLine[gcf->uiInputSize - i] = gcf->uiInputLine[gcf->uiInputSize - (i + 1)];
+            }
+
+            gcf->uiInputLine[gcf->uiInputPos++] = codepoint & 0xFF;
+            gcf->uiInputSize++;
+            gcf->uiInputLine[gcf->uiInputSize] = '\0';
+        }
+    }
+
+    /* echo */
+    if (gcf->uiInputSize > 0 && gcf->uiInputSize < UI_MAX_INPUT_LENGTH)
+    {
+        char buf[384];
+        UI_GetWinSize(&w, &h);
+        UI_SetCursor(0, h);
+        for (i = 0; i < gcf->uiInputSize; i++)
+        {
+            buf[i] = gcf->uiInputLine[i];
+        }
+        for (; i < (int)(sizeof(buf) - 1) && i < (int)w; i++)
+        {
+            buf[i] = ' ';
+        }
+        buf[i] = '\0';
+        PL_Print(&buf[0]);
+        UI_SetCursor(gcf->uiInputPos + 1, h);
+    }
+}
+
 void NET_Received(int client_id, const unsigned char *buf, unsigned bufsize)
 {
     (void)buf;
@@ -1317,7 +1545,11 @@ void PROT_Packet(const unsigned char *data, unsigned len)
 
     gcf = &gcfLocal;
 
-    if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
+    if (gcf->uiInteractive && gcf->uiInputSize)
+    {
+        /* don't scramble console output */
+    }
+    else if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
         p = &gcf->ascii[0];
         for (i = 0; i < (int)len; i++, p += 2)
@@ -1452,7 +1684,7 @@ static void gcfPrintHelp(void)
 #else
     " -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee\n"
 #ifdef USE_NET
-    " -i <interface>  listen interface\n"
+    " -n <interface>  listen interface\n"
     "                 when only -p is specified default is 0.0.0.0 for any interface\n"
     " -p <port>       listen port\n"
 #endif
@@ -1461,7 +1693,10 @@ static void gcfPrintHelp(void)
 //    " -s <serial>     serial number to use\n"
     " -t <timeout>    retry until timeout (seconds) is reached\n"
     " -l              list devices\n"
-//    " -x <loglevel>   debug log level 0, 1, 3\n"
+    " -x <loglevel>   debug log level 0, 1, 3\n"
+#ifdef PL_LINUX
+    " -i              interactive mode for debugging\n"
+#endif
     " -h -?           print this help\n";
 
 #ifdef __WATCOMC__
@@ -1498,7 +1733,9 @@ void U_sstream_put_u32hex(U_SStream *ss, unsigned long val)
 
 void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned size)
 {
-#ifndef NDEBUG
+    if (gcf->uiDebugLevel == 0)
+        return;
+
     char *p;
     char buf[1024];
     unsigned i;
@@ -1522,12 +1759,6 @@ void gcfDebugHex(GCF *gcf, const char *msg, const unsigned char *data, unsigned 
     U_sstream_put_long(ss, (long)size);
     U_sstream_put_str(ss, ")\n");
     UI_Puts(gcf, ss->str);
-#else
-    (void)gcf;
-    (void)msg;
-    (void)data;
-    (void)size;
-#endif
 }
 
 static GCF_Status gcfProcessCommandline(GCF *gcf)
@@ -1542,6 +1773,8 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 
     gcf->state = ST_Void;
     gcf->substate = ST_Void;
+    gcf->uiInteractive = 0;
+    gcf->uiDebugLevel = 0;
     gcf->devpath[0] = '\0';
     gcf->devSerialNum[0] = '\0';
     gcf->devType = DEV_UNKNOWN;
@@ -1572,6 +1805,11 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                 case 'c':
                 {
                     gcf->task = T_CONNECT;
+                } break;
+
+                case 'i':
+                {
+                    gcf->uiInteractive = 1;
                 } break;
 
                 case 'd':
@@ -1676,7 +1914,19 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     }
 
                     i++;
-                    /* TODO this is a no-op currently */
+                    arg = gcf->argv[i];
+
+                    U_sstream_init(&ss, gcf->argv[i], U_strlen(gcf->argv[i]));
+
+                    longval = U_sstream_get_long(&ss); /* debug level */
+
+                    if (ss.status != U_SSTREAM_OK || longval < 0 || longval > 3)
+                    {
+                        PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -x\n", arg);
+                        return GCF_FAILED;
+                    }
+
+                    gcf->uiDebugLevel = (int)longval;
                 } break;
 
 #ifdef USE_NET
@@ -1817,10 +2067,30 @@ static void gcfCommandResetUart(void)
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
 
+static void gcfCommandQueryParameter(unsigned char seq, unsigned char id, unsigned char *data, unsigned dataLength)
+{
+    unsigned i;
+    U_BStream  bs;
+    unsigned char cmd[127];
+
+    U_bstream_init(&bs, cmd, sizeof(cmd));
+    U_bstream_put_u8(&bs, 0x0A); /* command: read parameter */
+    U_bstream_put_u8(&bs, seq); /*  sequence number */
+    U_bstream_put_u8(&bs, 0x00); /* status */
+    U_bstream_put_u16_le(&bs, 3 + 2 + 2 + 1 + dataLength); /* frame length */
+    U_bstream_put_u16_le(&bs, dataLength + 1); /* dynamic buffer length */
+    U_bstream_put_u8(&bs, id); /* parameter id */
+
+    for (i = 0; i < dataLength; i++)
+    {
+        U_bstream_put_u8(&bs, data[i]);
+    }
+
+    PROT_SendFlagged(cmd, bs.pos);
+}
+
 static void gcfCommandQueryStatus(void)
 {
-    static unsigned char seq = 1;
-
     unsigned char cmd[] = {
         0x07, // command: write parmater
         0x02, // seq
@@ -1829,7 +2099,7 @@ static void gcfCommandQueryStatus(void)
         0x00, 0x00, 0x00 // dummy bytes
     };
 
-    cmd[1] = seq++;
+    cmd[1] = gcfSeq++;
 
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
