@@ -117,6 +117,7 @@ static int query_udevadm(Device *dev, Device *end)
                         if      (U_sstream_starts_with(&ss, "1cf1")) { usb_vendor = 0x1cf1; }
                         else if (U_sstream_starts_with(&ss, "0403")) { usb_vendor = 0x0403; }
                         else if (U_sstream_starts_with(&ss, "1a86")) { usb_vendor = 0x1a86; }
+                        else if (U_sstream_starts_with(&ss, "303a")) { usb_vendor = 0x303a; }
                     }
                     else if (U_sstream_starts_with(&ss, "ID_USB_SERIAL_SHORT=") && U_sstream_find(&ss, "="))
                     {
@@ -124,13 +125,18 @@ static int query_udevadm(Device *dev, Device *end)
                         ss.pos += 1;
                         dev_cur->serial[0] = '\0';
 
-                        for (;ss.pos < ss.len && i + 1 < sizeof(dev_cur->serial); ss.pos++, i++)
+                        for (;ss.pos < ss.len && i + 1 < sizeof(dev_cur->serial); ss.pos++)
                         {
                             ch = U_sstream_peek_char(&ss);
                             if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
                             {
                                 dev_cur->serial[i] = ch;
                                 dev_cur->serial[i + 1] = '\0';
+                                i++;
+                            }
+                            else if (ch == ':')
+                            {
+                                /* 40:4C:CA:42:8B:50 (ignore ':' in hex string) */
                             }
                             else
                             {
@@ -170,6 +176,10 @@ static int query_udevadm(Device *dev, Device *end)
                             {
                                 dev_cur->baudrate = PL_BAUDRATE_115200;
                             }
+                            else if (U_sstream_starts_with(&s2, "USB_JTAG_serial_debug_unit"))
+                            {
+                                dev_cur->baudrate = PL_BAUDRATE_115200; /* expressif (FLS-M) */
+                            }
                         }
                     }
                 }
@@ -184,6 +194,12 @@ static int query_udevadm(Device *dev, Device *end)
                     dev_cur->serial[0] = '1';
                     dev_cur->serial[1] = '\0';
                 }
+            }
+            else if (usb_vendor == 0x303a)
+            {
+                U_SStream s2;
+                U_sstream_init(&s2, dev_cur->name, sizeof(dev_cur->name));
+                U_sstream_put_str(&s2, "Espressif");
             }
 
             if (usb_vendor && dev_cur->serial[0] && dev_cur->name[0])
@@ -236,6 +252,7 @@ int plGetLinuxUSBDevices(Device *dev, Device *end)
     const char *devConBeeIII = "ConBee_III"; /* usb-dresden_elektronik_ConBee_III_DEDEADAFFE-if00-port0 */
     const char *devConBeeIFTDI = "FT230X_Basic_UART"; /* usb-FTDI_FT230X_Basic_UART_DJ00QBWE-if00-port0 */
     const char *devConBeeI = "ConBee";
+    const char *devEspressif = "Espressif_USB_JTAG_serial_debug_unit"; /* usb-Espressif_USB_JTAG_serial_debug_unit_40:4C:CA:42:8B:50-if00 */
 
     while ((entry = readdir(dir)) != NULL)
     {
@@ -282,6 +299,15 @@ int plGetLinuxUSBDevices(Device *dev, Device *end)
             */
             serial = strstr(entry->d_name, devConBeeIFTDI) + strlen(devConBeeIFTDI) + 1;
             dev->baudrate = PL_BAUDRATE_38400;
+        }
+        else if (strstr(entry->d_name, devEspressif))
+        {
+            name = "Espressif";
+            /* usb-Espressif_USB_JTAG_serial_debug_unit_40:4C:CA:42:8B:50-if00
+                                                        ^
+            */
+            serial = strstr(entry->d_name, devEspressif) + strlen(devEspressif) + 1;
+            dev->baudrate = PL_BAUDRATE_115200;
         }
 
         if (!name)
