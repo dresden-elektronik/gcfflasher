@@ -28,6 +28,7 @@
 #include "gcf.h"
 #include "u_sstream.h"
 #include "u_strlen.h"
+#include "u_mem.h"
 
 /* in gcf.c for now */
 extern void U_sstream_put_u32hex(U_SStream *ss, unsigned long val);
@@ -61,6 +62,17 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max);
 
 /* for compiling without CRT */
 int _fltused=0;
+
+#ifdef _MSC_VER
+#pragma function(memcpy)
+void *memcpy(void *dst, const void *src, SIZE_T n)
+#else
+void *memcpy(void *dst, const void *src, unsigned long n)
+#endif
+{
+    return U_memcpy(dst, src, (unsigned long)n);
+}
+
 #ifdef _MSC_VER
 #pragma function(memset)
 void *memset(void *dst, int c, SIZE_T count)
