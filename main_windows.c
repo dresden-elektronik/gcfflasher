@@ -239,6 +239,11 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
             vid = 0x1a86;
             pid = 0x7523;
         }
+        else if (U_sstream_find(&ss, "VID_303A") && U_sstream_find(&ss, "PID_1001")) // Espressif ~ FLS-M
+        {
+            vid = 0x303a;
+            pid = 0x1001;
+        }
         else
         {
 
@@ -283,6 +288,17 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
             }
 
             serial[i] = '\0';
+        }
+        else if (vid == 0x303a && pid == 0x1001)
+        {
+            serial[0] = 'u';
+            serial[1] = 'n';
+            serial[2] = 'k';
+            serial[3] = 'n';
+            serial[4] = 'o';
+            serial[5] = 'w';
+            serial[6] = 'n';
+            serial[7] = '\0';
         }
         else
         {
@@ -368,6 +384,12 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                     {
                         U_sstream_init(&ss, dev->name, sizeof(dev->name));
                         U_sstream_put_str(&ss, "Serial CH340");
+                        dev->baudrate = PL_BAUDRATE_115200;
+                    }
+                    else if (vid == 0x303a) // Espressif ~ FLS-M
+                    {
+                        U_sstream_init(&ss, dev->name, sizeof(dev->name));
+                        U_sstream_put_str(&ss, "Espressif");
                         dev->baudrate = PL_BAUDRATE_115200;
                     }
                 }
