@@ -10,6 +10,7 @@ GCFFlasher is the tool to program the firmware of dresden elektronik Zigbee prod
 * RaspBee I
 * RaspBee II
 * Hive
+* FLS-M
 
 ## Supported platforms
 
