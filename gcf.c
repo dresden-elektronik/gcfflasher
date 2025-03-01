@@ -2023,13 +2023,13 @@ static void gcfPrintHelp(void)
     "                 when only -p is specified default is 0.0.0.0 for any interface\n"
     " -p <port>       listen port\n"
 #endif
-#ifdef USE_SNIFF
+#endif
+    #ifdef USE_SNIFF
     " -s <channel>    enable sniffer on Zigbee channel (requires sniffer firmware)\n"
     "                 the Wireshark sniffer traffic is send to UDP port 17754\n"
     " -H <host>       send sniffer traffic to Wireshark running on host\n"
     "                 default is 172.0.0.1 (localhost)\n"
-#endif
-#endif
+    #endif
     " -c              connect and debug serial protocol\n"
 //    " -s <serial>     serial number to use\n"
     " -t <timeout>    retry until timeout (seconds) is reached\n"

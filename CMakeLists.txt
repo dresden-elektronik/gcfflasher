@@ -33,6 +33,7 @@ if (USE_NET OR USE_SNIFF)
     endif ()
     if (WIN32)
         list(APPEND NET_SRCS net_udp_win32.c)
+        target_link_libraries(${PROJECT_NAME} ws2_32.lib)
     endif ()
 
     target_sources(${PROJECT_NAME}

@@ -6,7 +6,11 @@
 #define S_AF_IPV6  6
 #define S_UDP_MAX_PKG_SIZE 1280
 
+#ifdef PL_WIN
+typedef unsigned long long S_Handle;
+#else
 typedef int S_Handle;
+#endif
 
 typedef enum S_UdpState
 {

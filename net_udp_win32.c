@@ -1,28 +1,67 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include "u_mem.h"
+#include "net_sock.h"
+
+static int wsa_init = 0;
+static WSADATA wsa_data;
 
 int SOCK_UdpInit(S_Udp *udp, int af)
 {
+    if (wsa_init == 0)
+    {
+        if (WSAStartup(MAKEWORD(2,2), &wsa_data) != 0)
+            return -1;
+
+        wsa_init = 1;
+    }
+
     U_bzero(udp, sizeof(*udp));
     udp->state = S_UDP_STATE_INIT;
     udp->addr.af = af;
-#if 0
+
     if      (af == S_AF_IPV4) af = AF_INET;
     else if (af == S_AF_IPV6) af = AF_INET6;
-    else return -1;
-
-    udp->handle = socket(af, SOCK_DGRAM, 0);
-    udp->handle = -1;
-    if (udp->handle == -1)
+    else
     {
-        return -1;
+        udp->addr.af = S_AF_UNKNOWN;
+        return 0;
     }
 
-    udp->state = S_UDP_STATE_OPEN;
-#endif
+    udp->handle = socket(af, SOCK_DGRAM, 0);
 
-    return 0;
+    if (udp->handle == INVALID_SOCKET)
+        return 0;
+
+    udp->state = S_UDP_STATE_OPEN;
+
+    return 1;
 }
 
-int SOCK_UdpBind(S_Udp *udp, u16 port)
+int SOCK_UdpSetPeer(S_Udp *udp, const char *peer, unsigned short port)
+{
+    struct in_addr addr;
+    struct in6_addr addr6;
+
+    if (inet_pton(AF_INET, peer, &addr) == 1)
+    {
+        udp->peer_addr.af = S_AF_IPV4;
+        udp->peer_port = port;
+        U_memcpy(udp->peer_addr.data, &addr.s_addr, 4);
+        return 0;
+    }
+    else if (inet_pton(AF_INET6, peer, &addr6) == 1)
+    {
+        udp->peer_addr.af = S_AF_IPV6;
+        udp->peer_port = port;
+        U_memcpy(udp->peer_addr.data, &addr6, 16);
+        return 0;
+    }
+
+    return -1;
+}
+
+int SOCK_UdpBind(S_Udp *udp, unsigned short port)
 {
 #if 0
     int ret;
@@ -63,6 +102,7 @@ err:
 
 int SOCK_UdpJoinMulticast(S_Udp *udp, const char *maddr)
 {
+    (void)maddr;
     if (udp->state != S_UDP_STATE_OPEN)
         return -1;
 #if 0
@@ -86,7 +126,7 @@ err:
     return -1;
 }
 
-void SOCK_UdpRecv(S_Udp *udp)
+int SOCK_UdpRecv(S_Udp *udp, unsigned char *buf, unsigned bufsize)
 {
 #if 0
     ssize_t n;
@@ -117,12 +157,48 @@ void SOCK_UdpRecv(S_Udp *udp)
         }
     }
 #endif
+    return -1;
+}
+
+int SOCK_UdpSend(S_Udp *udp, unsigned char *buf, unsigned bufsize)
+{
+    int n;
+    struct sockaddr_in dest_addr;
+    struct sockaddr_in6 dest_addr6;
+
+    if (udp->peer_addr.af == S_AF_IPV4)
+    {
+        dest_addr.sin_family = AF_INET;
+        U_memcpy ( (char *) &dest_addr.sin_addr.s_addr, udp->peer_addr.data, 4);
+        dest_addr.sin_port = htons(udp->peer_port);
+
+        n = sendto(udp->handle, (char*)buf, (int)bufsize, 0 /* flags */, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+    }
+    else if (udp->peer_addr.af == S_AF_IPV6)
+    {
+        dest_addr6.sin6_family = AF_INET6;
+        U_memcpy ( (char *) &dest_addr6.sin6_addr, udp->peer_addr.data, 16);
+        dest_addr6.sin6_port = htons (udp->peer_port);
+
+        n = sendto(udp->handle, (char*)buf, (int)bufsize, 0 /* flags */, (struct sockaddr*)&dest_addr6, sizeof(dest_addr6));
+    }
+    else
+    {
+        return -1;
+    }
+
+    if (n < 0)
+    {
+        return -1;
+    }
+
+    return n;
 }
 
 void SOCK_UdpFree(S_Udp *udp)
 {
-//    if (udp->handle)
-//        close(udp->handle);
+    if (udp->handle)
+        closesocket(udp->handle);
 
     U_bzero(udp, sizeof(*udp));
     udp->state = S_UDP_STATE_INIT;
