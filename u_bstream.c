@@ -86,6 +86,17 @@ void U_bstream_put_u32_le(U_BStream *bs, unsigned long v)
     }
 }
 
+void U_bstream_put_u32_be(U_BStream *bs, unsigned long v)
+{
+    if (U_bstream_verify_write(bs, 4))
+    {
+        bs->data[bs->pos++] = (v >> 24) & 0xFF;
+        bs->data[bs->pos++] = (v >> 16) & 0xFF;
+        bs->data[bs->pos++] = (v >> 8) & 0xFF;
+        bs->data[bs->pos++] = (v >> 0) & 0xFF;
+    }
+}
+
 unsigned char U_bstream_get_u8(U_BStream *bs)
 {
     unsigned char result;

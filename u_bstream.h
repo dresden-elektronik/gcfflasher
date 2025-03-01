@@ -33,6 +33,7 @@ void U_bstream_init(U_BStream *bs, void *data, unsigned long size);
 void U_bstream_put_u8(U_BStream *bs, unsigned char v);
 void U_bstream_put_u16_le(U_BStream *bs, unsigned short v);
 void U_bstream_put_u32_le(U_BStream *bs, unsigned long v);
+void U_bstream_put_u32_be(U_BStream *bs, unsigned long v);
 unsigned char U_bstream_get_u8(U_BStream *bs);
 unsigned short U_bstream_get_u16_le(U_BStream *bs);
 unsigned short U_bstream_get_u16_be(U_BStream *bs);
