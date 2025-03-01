@@ -2,6 +2,8 @@ cmake_minimum_required (VERSION 3.5)
 project (GCFFlasher VERSION 4.6.0)
 
 option(USE_NET "Support connection via network sockets" OFF)
+option(USE_SNIFF "Support sniffer firmware" ON)
+
 set(COMMON_SRCS
         gcf.c
         buffer_helper.c
@@ -15,20 +17,32 @@ set(COMMON_SRCS
 
 add_executable(${PROJECT_NAME} ${COMMON_SRCS})
 
-target_compile_definitions(${PROJECT_NAME}
-    PUBLIC
-    APP_VERSION="\"\"${PROJECT_VERSION}\"\"")
+if (USE_SNIFF)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_SNIFF)
+endif()
 
 if (USE_NET)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NET)
-    list(APPEND COMMON_SRCS net_sock.c)
+endif ()
+
+if (USE_NET OR USE_SNIFF)
+    set(NET_SRCS net_sock.c)
+
     if (UNIX)
-        list(APPEND COMMON_SRCS net_udp_posix.c)
+        list(APPEND NET_SRCS net_udp_posix.c)
     endif ()
     if (WIN32)
-        list(APPEND COMMON_SRCS net_udp_win32.c)
+        list(APPEND NET_SRCS net_udp_win32.c)
     endif ()
-endif ()
+
+    target_sources(${PROJECT_NAME}
+            PRIVATE
+            ${NET_SRCS})
+endif()
+
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+    APP_VERSION="\"\"${PROJECT_VERSION}\"\"")
 
 if (UNIX)
     target_sources(${PROJECT_NAME} PRIVATE main_posix.c)

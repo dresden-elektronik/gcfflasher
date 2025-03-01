@@ -34,9 +34,13 @@ typedef struct S_Udp
 int SOCK_Init();
 void SOCK_Free();
 
+int SOCK_GetHostAF(const char *host);
+
 int SOCK_UdpInit(S_Udp *udp, int af);
+int SOCK_UdpSetPeer(S_Udp *udp, const char *peer, unsigned short port);
 int SOCK_UdpBind(S_Udp *udp, unsigned short port);
 int SOCK_UdpJoinMulticast(S_Udp *udp, const char *maddr);
+int SOCK_UdpSend(S_Udp *udp, unsigned char *buf, unsigned bufsize);
 int SOCK_UdpRecv(S_Udp *udp, unsigned char *buf, unsigned bufsize);
 void SOCK_UdpFree(S_Udp *udp);
 

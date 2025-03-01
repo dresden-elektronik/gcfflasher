@@ -42,6 +42,29 @@ int SOCK_UdpInit(S_Udp *udp, int af)
     return 1;
 }
 
+int SOCK_UdpSetPeer(S_Udp *udp, const char *peer, unsigned short port)
+{
+    struct in_addr addr;
+    struct in6_addr addr6;
+
+    if (inet_pton(AF_INET, peer, &addr) == 1)
+    {
+        udp->peer_addr.af = S_AF_IPV4;
+        udp->peer_port = port;
+        U_memcpy(udp->peer_addr.data, &addr.s_addr, 4);
+        return 0;
+    }
+    else if (inet_pton(AF_INET6, peer, &addr6) == 1)
+    {
+        udp->peer_addr.af = S_AF_IPV6;
+        udp->peer_port = port;
+        U_memcpy(udp->peer_addr.data, &addr6, 16);
+        return 0;
+    }
+
+    return -1;
+}
+
 int SOCK_UdpBind(S_Udp *udp, unsigned short port)
 {
     int ret;
@@ -127,6 +150,42 @@ int SOCK_UdpJoinMulticast(S_Udp *udp, const char *maddr)
 err:
     udp->state = S_UDP_STATE_ERROR;
     return -1;
+}
+
+int SOCK_UdpSend(S_Udp *udp, unsigned char *buf, unsigned bufsize)
+{
+    ssize_t n;
+    struct sockaddr_in dest_addr;
+    struct sockaddr_in6 dest_addr6;
+
+    if (udp->peer_addr.af == S_AF_IPV4)
+    {
+        dest_addr.sin_family = AF_INET;
+        U_memcpy ( (char *) &dest_addr.sin_addr.s_addr, udp->peer_addr.data, 4);
+        dest_addr.sin_port = htons (udp->peer_port);
+
+        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, &dest_addr, sizeof(dest_addr));
+    }
+    else if (udp->peer_addr.af == S_AF_IPV6)
+    {
+        dest_addr6.sin6_family = AF_INET6;
+        U_memcpy ( (char *) &dest_addr6.sin6_addr, udp->peer_addr.data, 16);
+        dest_addr6.sin6_port = htons (udp->peer_port);
+
+        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, &dest_addr6, sizeof(dest_addr6));
+    }
+    else
+    {
+        return -1;
+    }
+
+    if (n < 0)
+    {
+
+        return -1;
+    }
+
+    return (int)n;
 }
 
 int SOCK_UdpRecv(S_Udp *udp, unsigned char *buf, unsigned bufsize)
