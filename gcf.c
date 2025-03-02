@@ -1186,7 +1186,7 @@ static void ST_SniffConfigConfirm(GCF *gcf, Event event)
     {
         U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
 
-        if (U_sstream_find(&ss, "Receiving...OK"))
+        if (U_sstream_find(&ss, "OK"))
         {
             PL_ClearTimeout();
             gcf->state = ST_SniffSyncData;
