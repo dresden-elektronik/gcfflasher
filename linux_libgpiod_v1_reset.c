@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -14,6 +14,7 @@
 #include <string.h>
 #include "gcf.h"
 
+/* Implementation for libgpiod version < 2.x */
 /*
    /sys/bus/usb/drivers/cdc_acm
    /sys/class/tty/ttyACM0/device

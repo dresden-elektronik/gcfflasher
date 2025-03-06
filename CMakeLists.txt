@@ -60,15 +60,22 @@ if (UNIX)
         target_compile_definitions(${PROJECT_NAME} PRIVATE PL_LINUX=1)
         target_sources(${PROJECT_NAME}
                 PRIVATE
-                linux_get_usb_devices.c
-                linux_libgpiod_reset.c)
+                linux_get_usb_devices.c)
 
         find_package(PkgConfig)
         pkg_check_modules(GPIOD libgpiod)
         if (${GPIOD_FOUND})
-
+            if (${GPIOD_VERSION} VERSION_LESS 2.0)
+                target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD_V1)
+                target_sources(${PROJECT_NAME} PRIVATE linux_libgpiod_v1_reset.c)
+            elseif (${GPIOD_VERSION} VERSION_LESS 3.0)
+                target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD_V2)
+                target_sources(${PROJECT_NAME} PRIVATE linux_libgpiod_v2_reset.c)
+            endif()
+            message("gpiod version: ${GPIOD_VERSION}")
             target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_LIBGPIOD)
             target_link_libraries(${PROJECT_NAME} dl)
+
         endif()
     endif()
 
