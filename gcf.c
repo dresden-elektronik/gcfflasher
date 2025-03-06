@@ -34,6 +34,7 @@
 #define GCF_HEADER_SIZE 14
 #define GCF_MAGIC 0xCAFEFEED
 
+#define FLASH_TYPE_APP_UNENCRYPTED            0
 #define FLASH_TYPE_APP_ENCRYPTED             60
 #define FLASH_TYPE_APP_COMPRESSED_ENCRYPTED  70
 #define FLASH_TYPE_BTL_ENCRYPTED             80
@@ -216,6 +217,21 @@ void put_hex(unsigned char ch, char *buf)
 {
     buf[0] = hex_lookup[(ch >> 4) & 0xF];
     buf[1] = hex_lookup[(ch & 0x0F)];
+}
+
+static unsigned char CRC8_Dallas(unsigned char crc, unsigned char *data, unsigned length)
+{
+    unsigned char i;
+
+    while (length--)
+    {
+        crc ^= *data++;
+        for(i = 0; i < 8; i++)
+        {
+            crc = crc & 0x80 ? (crc << 1) ^ 0x31 : crc << 1;
+        }
+    }
+    return crc;
 }
 
 static UI_Line *UI_NextLine(GCF *gcf)
@@ -834,8 +850,8 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         pageNumber <<= 8;
         pageNumber |= (unsigned char)(gcf->ascii[3] & 0xFF);
 
-        page = &gcf->file.fcontent[GCF_HEADER_SIZE] + pageNumber * V1_PAGESIZE;
-        end = &gcf->file.fcontent[GCF_HEADER_SIZE + gcf->file.gcfFileSize];
+        page = &gcf->file.fcontent[gcf->file.dataOffset] + pageNumber * V1_PAGESIZE;
+        end = &gcf->file.fcontent[gcf->file.dataOffset + gcf->file.gcfFileSize];
 
         Assert(page < end);
         if (page >= end)
@@ -1549,70 +1565,80 @@ int GCF_ParseFile(GCF_File *file)
        U8  checksum (Dallas CRC-8)
     */
     magic = U_bstream_get_u32_le(bs);
-    file->gcfFileType = U_bstream_get_u8(bs);
-    file->gcfTargetAddress = U_bstream_get_u32_le(bs);
-    file->gcfFileSize = U_bstream_get_u32_le(bs);
-    file->gcfCrc = U_bstream_get_u8(bs);
-
-    PL_Printf(DBG_DEBUG, "GCF header0: magic: 0x%08X, type: %u, address: 0x%08X, data.size: %lu\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
-
+    file->gcfFileType = 0;
+    file->gcfTargetAddress = 0;
+    file->gcfFileSize = 0;
+    file->gcfCrc = 0;
     /* newer products have extended format with CRC32 */
     file->gcfCrc32 = 0;
-    file->dataOffset = GCF_HEADER_SIZE;
 
-    if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED)
+    if (magic == GCF_MAGIC)
     {
-        /*
-         * u32 magic
-         *   0xDEC0DE02 Hive
-         *   0xDEC0DE03 ConBee III
-         *
-         * u32 total_size
-         * image_1
-         * ...
-         * image_N
-         * u32 crc32 over everything
-         *
-         * image format:
-         *   u32 image_size
-         *   u32 image_type
-         *   u32 target_address
-         *   u32 plain_image_size (uncompressed)
-         *   u32 plain_crc2
-         *   u8[] data (4-byte aligned)
-         */
+        file->dataOffset = GCF_HEADER_SIZE;
+        file->gcfFileType = U_bstream_get_u8(bs);
+        file->gcfTargetAddress = U_bstream_get_u32_le(bs);
+        file->gcfFileSize = U_bstream_get_u32_le(bs);
+        file->gcfCrc = U_bstream_get_u8(bs);
 
-        unsigned long magic1;
-        unsigned long totalSize;
-        unsigned long imageSize;
-        unsigned long imageType;
-        unsigned long imageTargetAddress;
-        unsigned long imagePlainSize;
+        PL_Printf(DBG_DEBUG, "GCF header0: magic: 0x%08X, type: %u, address: 0x%08X, data.size: %lu\n", magic, file->gcfFileType, file->gcfTargetAddress, file->gcfFileSize);
 
-        magic1 = U_bstream_get_u32_le(bs);
+        if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED)
+        {
+            /*
+             * u32 magic
+             *   0xDEC0DE02 Hive
+             *   0xDEC0DE03 ConBee III
+             *
+             * u32 total_size
+             * image_1
+             * ...
+             * image_N
+             * u32 crc32 over everything
+             *
+             * image format:
+             *   u32 image_size
+             *   u32 image_type
+             *   u32 target_address
+             *   u32 plain_image_size (uncompressed)
+             *   u32 plain_crc2
+             *   u8[] data (4-byte aligned)
+             */
 
-        totalSize = U_bstream_get_u32_le(bs);
-        Assert(totalSize == file->gcfFileSize);
-        imageSize = U_bstream_get_u32_le(bs);
-        (void)imageSize;
-        imageType = U_bstream_get_u32_le(bs);
-        imageTargetAddress = U_bstream_get_u32_le(bs);
-        imagePlainSize = U_bstream_get_u32_le(bs);
-        file->gcfCrc32 = U_bstream_get_u32_le(bs);
+            unsigned long magic1;
+            unsigned long totalSize;
+            unsigned long imageSize;
+            unsigned long imageType;
+            unsigned long imageTargetAddress;
+            unsigned long imagePlainSize;
 
-        PL_Printf(DBG_DEBUG, "GCF header1: product: 0x%08X, img.type: %u, img.address: 0x%08X, img.data.size: %lu, crc32: 0x%08X\n",
-                  magic1, imageType, imageTargetAddress, imagePlainSize, file->gcfCrc32);
+            magic1 = U_bstream_get_u32_le(bs);
+
+            totalSize = U_bstream_get_u32_le(bs);
+            Assert(totalSize == file->gcfFileSize);
+            imageSize = U_bstream_get_u32_le(bs);
+            (void)imageSize;
+            imageType = U_bstream_get_u32_le(bs);
+            imageTargetAddress = U_bstream_get_u32_le(bs);
+            imagePlainSize = U_bstream_get_u32_le(bs);
+            file->gcfCrc32 = U_bstream_get_u32_le(bs);
+
+            PL_Printf(DBG_DEBUG, "GCF header1: product: 0x%08X, img.type: %u, img.address: 0x%08X, img.data.size: %lu, crc32: 0x%08X\n",
+                      magic1, imageType, imageTargetAddress, imagePlainSize, file->gcfCrc32);
+        }
+        else if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED_2)
+        {
+            /* here the CRC32 is part of the header but not of the 'gcfFileSize' */
+            file->gcfCrc32 = U_bstream_get_u32_le(bs);
+            file->dataOffset = GCF_HEADER_SIZE + 4;
+        }
     }
-    else if (file->gcfFileType == FLASH_TYPE_APP_ENCRYPTED_2)
+    else /* raw binary */
     {
-        /* here the CRC32 is part of the header but not of the 'gcfFileSize' */
-        file->gcfCrc32 = U_bstream_get_u32_le(bs);
-        file->dataOffset = GCF_HEADER_SIZE + 4;
-    }
-
-    if (magic != GCF_MAGIC)
-    {
-        return -2;
+        file->dataOffset = 0;
+        file->gcfFileType = FLASH_TYPE_APP_UNENCRYPTED;
+        file->gcfTargetAddress = 0;
+        file->gcfFileSize = file->fsize;
+        file->gcfCrc = CRC8_Dallas(0, file->fcontent, file->fsize);
     }
 
     if (file->gcfFileSize != (file->fsize - file->dataOffset))
