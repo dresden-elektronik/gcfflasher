@@ -23,9 +23,7 @@ The sources are POSIX compliant with a small platform specific layer, to make po
 
 ## Notes
 
-* The current release is not yet included in the deCONZ package.
-* The list command `-l` is in development and only partially implemended.
-* The output logging is not streamlined yet.
+* To use the sniffer mode on ConBee I and ConBee II the ZShark sniffer firmware needs to be installed. It can be downloaded at https://deconz.dresden-elektronik.de/deconz-firmware
 * On macOS the `-d` parameter is `/dev/cu.usbmodemDE...` where ... is the serialnumber.
 
 ## Building on Linux
@@ -122,15 +120,21 @@ The executable is `build/GCFFlasher4`
 
 ```
 $ ./GCFFlasher4
-GCFFlasher v4.1.0 copyright dresden elektronik ingenieurtechnik gmbh
+GCFFlasher 4.8.0 copyright dresden elektronik ingenieurtechnik gmbh
 usage: GCFFlasher <options>
 options:
- -r              force device reset without programming
+ -r              force device reboot without programming
  -f <firmware>   flash firmware file
  -d <device>     device number or path to use, e.g. 0, /dev/ttyUSB0 or RaspBee
+ -s <channel>    enable sniffer on Zigbee channel (requires sniffer firmware)
+                 the Wireshark sniffer traffic is send to UDP port 17754
+ -H <host>       send sniffer traffic to Wireshark running on host
+                 default is 172.0.0.1 (localhost)
  -c              connect and debug serial protocol
  -t <timeout>    retry until timeout (seconds) is reached
  -l              list devices
+ -x <loglevel>   debug log level 0, 1, 3
+ -i              interactive mode for debugging
  -h -?           print this help
 ```
 
