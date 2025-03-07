@@ -463,7 +463,7 @@ static double uss_modf(double x, double *iptr)
         return x;
     }
 
-    mask = -1ULL >> 12 >> e;
+    mask = 0xFFFFFFFFFFFFFFFFULL >> 12 >> e;
     if ((u.i & mask) == 0)
     {
         *iptr = x;
