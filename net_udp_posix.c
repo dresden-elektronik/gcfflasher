@@ -141,7 +141,11 @@ int SOCK_UdpJoinMulticast(S_Udp *udp, const char *maddr)
     {
         mreq6.ipv6mr_interface = 0;
         inet_pton(AF_INET6, maddr, &mreq6.ipv6mr_multiaddr);
+#ifdef PL_MAC
+        if (setsockopt(udp->handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6)) < 0)
+#else
         if (setsockopt(udp->handle, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)) < 0)
+#endif
             goto err;
 
         return 0;
