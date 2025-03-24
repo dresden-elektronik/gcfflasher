@@ -168,7 +168,7 @@ int SOCK_UdpSend(S_Udp *udp, unsigned char *buf, unsigned bufsize)
         U_memcpy ( (char *) &dest_addr.sin_addr.s_addr, udp->peer_addr.data, 4);
         dest_addr.sin_port = htons (udp->peer_port);
 
-        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, &dest_addr, sizeof(dest_addr));
+        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     }
     else if (udp->peer_addr.af == S_AF_IPV6)
     {
@@ -176,7 +176,7 @@ int SOCK_UdpSend(S_Udp *udp, unsigned char *buf, unsigned bufsize)
         U_memcpy ( (char *) &dest_addr6.sin6_addr, udp->peer_addr.data, 16);
         dest_addr6.sin6_port = htons (udp->peer_port);
 
-        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, &dest_addr6, sizeof(dest_addr6));
+        n = sendto(udp->handle, buf, (size_t)bufsize, 0 /* flags */, (struct sockaddr*)&dest_addr6, sizeof(dest_addr6));
     }
     else
     {
