@@ -166,7 +166,8 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME}
-       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+       BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Debian .deb specifics
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Manuel Pietschmann <mpi@dresden-elektronik.de>")
