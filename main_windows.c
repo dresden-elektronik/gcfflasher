@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024 dresden elektronik ingenieurtechnik gmbh.
+ * Copyright (c) 2021-2025 dresden elektronik ingenieurtechnik gmbh.
  * All rights reserved.
  *
  * The software in this package is published under the terms of the BSD
@@ -212,7 +212,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
 
         szBuffer[0] = '\0';
 
-        if (SetupDiGetDeviceInstanceId(DeviceInfoSet, &DeviceInfoData, &szBuffer[0], sizeof(szBuffer), NULL))
+        if (SetupDiGetDeviceInstanceId(DeviceInfoSet, &DeviceInfoData, (_TCHAR *)&szBuffer[0], sizeof(szBuffer), NULL))
         {
         }
 
@@ -221,7 +221,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
         if (szBuffer[0] == '\0')
             continue;
 
-        U_sstream_init(&ss, &szBuffer[0], U_strlen(&szBuffer[0]));
+        U_sstream_init(&ss, &szBuffer[0], U_strlen((char*)&szBuffer[0]));
 
         // filter vendor and product ids
         if (U_sstream_find(&ss, "VID_1CF1") && U_sstream_find(&ss, "PID_0030")) // ConBee II
@@ -321,7 +321,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
             }
         }
 
-        // no device with this serial yet, take a empty one
+        // no device with this serial yet, take an empty one
         if (!dev)
         {
             for (i = 0; i < max; i++)
@@ -364,7 +364,7 @@ static int GetComPort(const char *enumerator, Device *devs, size_t max)
                 if (dev->name[0] != 'C')
                 {
                     for (i = 0; i < sizeof(dev->name) && szBuffer[i]; i++)
-                        dev->name[i] = szBuffer[i];
+                        dev->name[i] = (char)szBuffer[i];
 
                     dev->name[i] = '\0';
 
@@ -886,7 +886,7 @@ int PROT_Write(const unsigned char *data, unsigned len)
         gcfDebugHex(platform.gcf, "send", data, len);
     }
 
-    return BytesWritten;
+    return (int)BytesWritten;
 }
 
 int PROT_Putc(unsigned char ch)
@@ -981,7 +981,7 @@ static void PL_Loop(GCF *gcf)
         }
         else if (NoBytesRead > 0)
         {
-            GCF_Received(gcf, platform.rxbuf, NoBytesRead);
+            GCF_Received(gcf, platform.rxbuf, (int)NoBytesRead);
         }
         else if (NoBytesRead == 0)
         {
