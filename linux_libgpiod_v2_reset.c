@@ -202,7 +202,7 @@ static struct gpiod_chip *plGetGpiodChip(const char *prefix)
 
         if (label)
         {
-            U_sstream_init(&ss, label, strlen(label));
+            U_sstream_init(&ss, (char*)label, strlen(label));
             if (U_sstream_find(&ss, prefix))
             {
                 fn_gpiod_chip_info_free(info);
