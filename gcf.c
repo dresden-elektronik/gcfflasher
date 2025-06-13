@@ -1997,7 +1997,7 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
 #endif
     }
 
-    /* further detemine detive type from the GCF header */
+    /* further determine the device type from the GCF header */
     if      (ftype == 60) { result = DEV_HIVE; baudrate = PL_BAUDRATE_115200; }
     else if (result == DEV_CONBEE_1 && ftype > 9)                   { result = DEV_UNKNOWN; baudrate = PL_BAUDRATE_38400; }
     else if (result == DEV_RASPBEE_2 && ftype >= 30 && ftype <= 39) { result = DEV_RASPBEE_2; baudrate = PL_BAUDRATE_38400; }
@@ -2050,6 +2050,9 @@ static void gcfPrintHelp(void)
     " -p <port>       listen port\n"
 #endif
 #endif
+    " -b <baudrate>   use specific baudrate (if not detected automatically)\n"
+    "                 38400    RaspBee I, RaspBee II, ConBee I\n"
+    "                 115200   ConBee II, ConBee III, Hive, FLS-M\n"
     #ifdef USE_SNIFF
     " -s <channel>    enable sniffer on Zigbee channel (requires sniffer firmware)\n"
     "                 the Wireshark sniffer traffic is send to UDP port 17754\n"
@@ -2259,6 +2262,30 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     gcf->task = T_LIST;
                     gcf->state = ST_ListDevices;
                     ret = GCF_SUCCESS;
+                } break;
+
+                case 'b':
+                {
+                    if ((i + 1) == gcf->argc || gcf->argv[i + 1][0] == '-')
+                    {
+                        PL_Printf(DBG_INFO, "missing argument for parameter -b\n");
+                        return GCF_FAILED;
+                    }
+
+                    i++;
+                    arg = gcf->argv[i];
+
+                    U_sstream_init(&ss, gcf->argv[i], U_strlen(gcf->argv[i]));
+
+                    longval = U_sstream_get_long(&ss); /* baudrate */
+
+                    if (ss.status != U_SSTREAM_OK || !(longval == PL_BAUDRATE_38400 || longval == PL_BAUDRATE_115200))
+                    {
+                        PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -b\n", arg);
+                        return GCF_FAILED;
+                    }
+
+                    gcf->devBaudrate = longval;
                 } break;
 
                 case 't':
