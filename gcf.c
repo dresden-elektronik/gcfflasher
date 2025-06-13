@@ -2527,7 +2527,7 @@ static void gcfCommandQueryParameter(unsigned char seq, unsigned char id, unsign
 static void gcfCommandQueryStatus(void)
 {
     unsigned char cmd[] = {
-        0x07, // command: write parmater
+        0x07, // command: status
         0x02, // seq
         0x00, // status
         0x08, 0x00, // frame length (12)
@@ -2542,7 +2542,7 @@ static void gcfCommandQueryStatus(void)
 static void gcfCommandQueryFirmwareVersion(void)
 {
     const unsigned char cmd[] = {
-        0x0D, // command: write parmater
+        0x0D, // command: version
         0x05, // seq
         0x00, // status
         0x09, 0x00, // frame length (9)
