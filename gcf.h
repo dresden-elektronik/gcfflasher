@@ -27,6 +27,7 @@ typedef enum
     EV_PL_LOOP = 101,
     EV_RX_ASCII = 50,
     EV_RX_BTL_PKG_DATA = 40,
+    EV_RX_PKG_DATA = 41,
     EV_CONNECTED = 200,
     EV_DISCONNECTED = 203,
     EV_TIMEOUT = 333

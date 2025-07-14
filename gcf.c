@@ -57,6 +57,23 @@
 /* Bootloader V1 */
 #define V1_PAGESIZE 256
 
+/* Serial commands */
+#define CMD_STATUS             0x07
+#define CMD_FIRMWARE_VERSION   0x0D
+#define CMD_READ_REGISTER      0x18
+
+/* Serial command status codes */
+#define CMD_STATUS_SUCCESS      0x00
+#define CMD_STATUS_FAILURE      0x01
+#define CMD_STATUS_BUSY         0x02
+#define CMD_STATUS_TIMEOUT      0x03
+#define CMD_STATUS_UNSUPPORTED  0x04
+#define CMD_STATUS_ERROR        0x05
+#define CMD_STATUS_ENONET       0x06
+#define CMD_STATUS_EINVAL       0x07
+#define CMD_STATUS_ELEN         0x08
+#define CMD_STATUS_EOFFSET      0x09
+
 typedef void (*state_handler_t)(GCF*, Event);
 
 typedef enum
@@ -66,6 +83,7 @@ typedef enum
     T_PROGRAM,
     T_LIST,
     T_CONNECT,
+    T_DUMP_FLASH,
     T_SNIFF,
     T_HELP
 } Task;
@@ -111,8 +129,12 @@ typedef struct GCF_t
     unsigned rp;     /* ascii[] read pointer */
     unsigned wp;     /* ascii[] write pointer */
     char ascii[512]; /* buffer for raw data */
+    unsigned char rxPacket[256]; /* buffer for rx packet */
+    int rxPacketLength;
     state_handler_t state;
     state_handler_t substate;
+
+    int evAction;
 
     /* UI line buffering */
     unsigned uiCurrentLine;
@@ -127,6 +149,9 @@ typedef struct GCF_t
 
     int retry;
 
+    unsigned flashAddress; /* dump flash current flash address */
+    unsigned flashSize; /* dump flash end address */
+    unsigned flashStep; /* how many bytes to query per packet */
     unsigned remaining; /* remaining bytes during upload */
 
     Task task;
@@ -157,6 +182,7 @@ typedef struct GCF_t
 } GCF;
 
 static DeviceType gcfGetDeviceType(GCF *gcf);
+static void gcfScheduleEventAction(GCF *gcf);
 static void gcfRetry(GCF *gcf);
 static void gcfPrintHelp(void);
 static GCF_Status gcfProcessCommandline(GCF *gcf);
@@ -165,6 +191,7 @@ static void gcfCommandResetUart(void);
 static void gcfCommandQueryStatus(void);
 static void gcfCommandQueryFirmwareVersion(void);
 static void gcfCommandQueryParameter(unsigned char seq, unsigned char id, unsigned char *data, unsigned dataLength);
+static void gcfCommandReadFlash(unsigned addr, unsigned size);
 static void ST_Void(GCF *gcf, Event event);
 static void ST_Init(GCF *gcf, Event event);
 
@@ -190,6 +217,11 @@ static void ST_SniffConfigConfirm(GCF *gcf, Event event);
 static void ST_SniffSyncData(GCF *gcf, Event event);
 static void ST_SniffRecvData(GCF *gcf, Event event);
 static void ST_SniffTeardown(GCF *gcf, Event event);
+
+static void ST_DumpFlashConnect(GCF *gcf, Event event);
+static void ST_DumpFlashQueryFirmwareVersion(GCF *gcf, Event event);
+static void ST_DumpFlashSend(GCF *gcf, Event event);
+static void ST_DumpFlashWait(GCF *gcf, Event event);
 
 static void ST_Reset(GCF *gcf, Event event);
 static void ST_ResetUart(GCF *gcf, Event event);
@@ -1443,6 +1475,167 @@ static void ST_SniffTeardown(GCF *gcf, Event event)
 
 #endif /* USE_SNIFF */
 
+static void ST_DumpFlashConnect(GCF *gcf, Event event)
+{
+    if (event == EV_ACTION)
+    {
+        gcf->rxPacketLength = 0;
+
+        if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+        {
+            gcf->state = ST_DumpFlashQueryFirmwareVersion;
+            gcfScheduleEventAction(gcf);
+        }
+        else
+        {
+            UI_Puts(gcf, "failed to connect\n");
+            PL_ShutDown();
+        }
+    }
+}
+
+static void ST_DumpFlashQueryFirmwareVersion(GCF *gcf, Event event)
+{
+    U_BStream bs;
+    unsigned fwVersion;
+
+    if (event == EV_ACTION)
+    {
+        gcfCommandQueryFirmwareVersion();
+        PL_SetTimeout(200);
+    }
+    else if (event == EV_RX_PKG_DATA)
+    {
+        U_bstream_init(&bs, &gcf->rxPacket[0], (unsigned)gcf->rxPacketLength);
+        if (U_bstream_get_u8(&bs) == CMD_FIRMWARE_VERSION)
+        {
+            PL_ClearTimeout();
+
+            U_bstream_get_u8(&bs); // seq
+            U_bstream_get_u8(&bs); // status
+            U_bstream_get_u16_le(&bs); // stored length
+
+            fwVersion = U_bstream_get_u32_le(&bs);
+
+            if ((fwVersion & FW_VERSION_PLATFORM_MASK) == FW_VERSION_PLATFORM_R21)
+            {
+                gcf->flashSize = 0x40000;
+                gcf->flashAddress = 0x5100;
+                gcf->flashStep = 32;
+                gcf->state = ST_DumpFlashSend;
+                gcfScheduleEventAction(gcf);
+            }
+            else
+            {
+                UI_Puts(gcf, "dump flash currently only supported on ConBee II and RaspBee II\n");
+                PL_ShutDown();
+            }
+        }
+    }
+    else if (event == EV_TIMEOUT)
+    {
+        UI_Puts(gcf, "failed to query firmware version\n");
+        PL_ShutDown();
+    }
+}
+
+static void ST_DumpFlashSend(GCF *gcf, Event event)
+{
+    if (event == EV_ACTION)
+    {
+        if (gcf->flashAddress == gcf->flashSize)
+        {
+            PL_ShutDown();
+            return;
+        }
+
+        PL_SetTimeout(200);
+        gcfCommandReadFlash(gcf->flashAddress, 32);
+        gcf->state = ST_DumpFlashWait;
+    }
+}
+
+static void ST_DumpFlashWait(GCF *gcf, Event event)
+{
+    unsigned char cmd;
+    unsigned char status;
+    unsigned char type;
+    unsigned size;
+    U_SStream *ss;
+    U_BStream bs;
+    unsigned addr;
+
+    if (event == EV_RX_PKG_DATA)
+    {
+        U_bstream_init(&bs, &gcf->rxPacket[0], (unsigned)gcf->rxPacketLength);
+
+        cmd = U_bstream_get_u8(&bs);
+        U_bstream_get_u8(&bs); // seq
+        status = U_bstream_get_u8(&bs); // status
+
+        U_bstream_get_u16_le(&bs); // stored length
+
+        if (cmd == CMD_READ_REGISTER)
+        {
+            PL_ClearTimeout();
+
+            if (status == CMD_STATUS_SUCCESS)
+            {
+                size = U_bstream_get_u16_le(&bs); // payload length
+
+                type = U_bstream_get_u8(&bs);
+                (void)type;
+                addr = U_bstream_get_u32_le(&bs);
+                size = U_bstream_get_u8(&bs);
+
+                ss = UI_StringStream(gcf);
+
+                // put out as srec ascii/hex record format
+                U_sstream_put_str(ss, "S2"); // 24-bit address
+                // size: 24-bit addr | 32 bytes data | 1 byte checksum
+                U_sstream_put_u8hex(ss, size + 4);
+                // 24-bit addr
+                U_sstream_put_u8hex(ss, (addr >> 16) & 0xFF);
+                U_sstream_put_u8hex(ss, (addr >> 8) & 0xFF);
+                U_sstream_put_u8hex(ss, addr & 0xFF);
+
+                for (unsigned i = 0; i < size; i++)
+                    U_sstream_put_u8hex(ss, U_bstream_get_u8(&bs));
+
+                U_sstream_put_str(ss, "FF"); // TODO(mpi): checksum
+                U_sstream_put_str(ss, "\n");
+                UI_Puts(gcf, ss->str);
+
+                gcf->flashAddress += gcf->flashStep;
+                gcf->state = ST_DumpFlashSend;
+                gcfScheduleEventAction(gcf);
+            }
+            else if (status == CMD_STATUS_EOFFSET)
+            {
+                /* can't read from here but proceed */
+                gcf->flashAddress += gcf->flashStep;
+                gcf->state = ST_DumpFlashSend;
+                gcfScheduleEventAction(gcf);
+            }
+            else
+            {
+                ss = UI_StringStream(gcf);
+
+                U_sstream_put_str(ss, "failed with status: 0x");
+                U_sstream_put_u8hex(ss, status);
+                U_sstream_put_str(ss, "\n");
+                UI_Puts(gcf, ss->str);
+                PL_ShutDown();
+            }
+        }
+    }
+    else if (event == EV_TIMEOUT)
+    {
+        UI_Puts(gcf, "timeout reading flash");
+        PL_ShutDown();
+    }
+}
+
 GCF *GCF_Init(int argc, char *argv[])
 {
     GCF *gcf;
@@ -1467,6 +1660,7 @@ GCF *GCF_Init(int argc, char *argv[])
     gcf->argv = argv;
     gcf->wp = 0;
     gcf->ascii[0] = '\0';
+    gcf->evAction = 0;
 
     return gcf;
 }
@@ -1503,6 +1697,12 @@ void GCF_HandleEvent(GCF *gcf, Event event)
     }
     else if (event == EV_PL_LOOP)
     {
+        if (gcf->evAction)
+        {
+            gcf->evAction = 0;
+            gcf->state(gcf, EV_ACTION);
+        }
+
         NET_Step();
         return;
     }
@@ -1946,11 +2146,21 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     }
     else if (data[0] == BTL_MAGIC)
     {
+        // TODO(mpi): use gcf->rxPacket
         if (len < sizeof(gcf->ascii))
         {
             U_memcpy(&gcf->ascii[0], data, len);
             gcf->wp = len;
             GCF_HandleEvent(gcf, EV_RX_BTL_PKG_DATA);
+        }
+    }
+    else
+    {
+        if (len < sizeof(gcf->rxPacket))
+        {
+            U_memcpy(&gcf->rxPacket[0], data, len);
+            gcf->rxPacketLength = (int)len;
+            GCF_HandleEvent(gcf, EV_RX_PKG_DATA);
         }
     }
 }
@@ -2006,6 +2216,11 @@ static DeviceType gcfGetDeviceType(GCF *gcf)
         gcf->devBaudrate = baudrate;
 
     return result;
+}
+
+static void gcfScheduleEventAction(GCF *gcf)
+{
+    gcf->evAction = 1;
 }
 
 static void gcfRetry(GCF *gcf)
@@ -2064,6 +2279,9 @@ static void gcfPrintHelp(void)
     " -t <timeout>    retry until timeout (seconds) is reached\n"
     " -l              list devices\n"
     " -x <loglevel>   debug log level 0, 1, 3\n"
+    " -k              dump flash in SREC format to stdout\n"
+    "                 (currently only for ConBee II / RaspBee II)\n"
+    "                 requires latest firmware version\n"
 #ifdef PL_LINUX
     " -i              interactive mode for debugging\n"
 #endif
@@ -2262,6 +2480,11 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                     gcf->task = T_LIST;
                     gcf->state = ST_ListDevices;
                     ret = GCF_SUCCESS;
+                } break;
+
+                case 'k':
+                {
+                    gcf->task = T_DUMP_FLASH;
                 } break;
 
                 case 'b':
@@ -2491,6 +2714,17 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
         ret = GCF_SUCCESS;
     }
 #endif /* USE_SNIFF */
+    else if (gcf->task == T_DUMP_FLASH)
+    {
+        if (gcf->devpath[0] == '\0')
+        {
+            PL_Printf(DBG_INFO, "missing -d argument\n");
+            return GCF_FAILED;
+        }
+
+        gcf->state = ST_DumpFlashConnect;
+        ret = GCF_SUCCESS;
+    }
     else if (gcf->task == T_RESET)
     {
         if (gcf->devpath[0] == '\0')
@@ -2554,7 +2788,7 @@ static void gcfCommandQueryParameter(unsigned char seq, unsigned char id, unsign
 static void gcfCommandQueryStatus(void)
 {
     unsigned char cmd[] = {
-        0x07, // command: status
+        CMD_STATUS,
         0x02, // seq
         0x00, // status
         0x08, 0x00, // frame length (12)
@@ -2569,7 +2803,7 @@ static void gcfCommandQueryStatus(void)
 static void gcfCommandQueryFirmwareVersion(void)
 {
     const unsigned char cmd[] = {
-        0x0D, // command: version
+        CMD_FIRMWARE_VERSION,
         0x05, // seq
         0x00, // status
         0x09, 0x00, // frame length (9)
@@ -2577,4 +2811,24 @@ static void gcfCommandQueryFirmwareVersion(void)
     };
 
     PROT_SendFlagged(cmd, sizeof(cmd));
+}
+
+static void gcfCommandReadFlash(unsigned addr, unsigned size)
+{
+    U_BStream bs;
+    unsigned char cmd[32];
+
+    U_bstream_init(&bs, &cmd[0], sizeof(cmd));
+
+    U_bstream_put_u8(&bs, CMD_READ_REGISTER);
+    U_bstream_put_u8(&bs, gcfSeq++);
+    U_bstream_put_u8(&bs, 0); // status
+    U_bstream_put_u16_le(&bs, 13); // frame length
+    U_bstream_put_u16_le(&bs, 6); // payload length
+
+    U_bstream_put_u8(&bs, 2); // type: read flash
+    U_bstream_put_u32_le(&bs, addr);
+    U_bstream_put_u8(&bs, size);
+
+    PROT_SendFlagged(cmd, bs.pos);
 }
