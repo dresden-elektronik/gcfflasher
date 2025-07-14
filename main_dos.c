@@ -355,6 +355,8 @@ static void PL_Loop(GCF *gcf)
 
     while (platform.running)
     {
+        GCF_HandleEvent(gcf, EV_PL_LOOP);
+
         outp(platform.com_port + 1 , 0);        /* Turn off interrupts */
         if (rx_count)
         {

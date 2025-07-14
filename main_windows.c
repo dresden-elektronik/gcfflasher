@@ -955,6 +955,8 @@ static void PL_Loop(GCF *gcf)
     BOOL Status;
     while (platform.running)
     {
+        GCF_HandleEvent(gcf, EV_PL_LOOP);
+
         if (platform.fd == INVALID_HANDLE_VALUE)
         {
             Sleep(20);
