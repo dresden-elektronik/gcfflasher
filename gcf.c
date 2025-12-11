@@ -61,6 +61,10 @@
 #define CMD_STATUS             0x07
 #define CMD_FIRMWARE_VERSION   0x0D
 #define CMD_READ_REGISTER      0x18
+#define CMD_WRITE_PARAMETER    0x0B
+
+/* Parameter IDs */
+#define PARAM_WATCHDOG_TIMEOUT 0x26
 
 /* Serial command status codes */
 #define CMD_STATUS_SUCCESS      0x00
@@ -482,8 +486,15 @@ static void ST_ResetUart(GCF *gcf, Event event)
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
         {
             if (gcf->task == T_RESET)
+            {
+                UI_Puts(gcf, "query firmware version\n");
                 gcfCommandQueryFirmwareVersion();
+            }
             gcfCommandResetUart();
+        }
+        else
+        {
+            UI_Puts(gcf, "failed to connect serial com\n");
         }
     }
     else if (event == EV_RX_BTL_PKG_DATA)
@@ -2131,11 +2142,11 @@ void PROT_Packet(const unsigned char *data, unsigned len)
         gcfDebugHex(gcf, "recv_packet", data, len);
     }
 
-    if (data[0] == 0x0B && len >= 8) /* write parameter response */
+    if (data[0] == CMD_WRITE_PARAMETER && len >= 8) /* write parameter response */
     {
         switch (data[7])
         {
-            case 0x26: /* param: watchdog timeout */
+            case PARAM_WATCHDOG_TIMEOUT:
             {
                 GCF_HandleEvent(gcf, EV_PKG_UART_RESET);
             } break;
@@ -2156,6 +2167,18 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     }
     else
     {
+        if (data[0] == CMD_FIRMWARE_VERSION && len >= 9 && data[2] == CMD_STATUS_SUCCESS)
+        {
+            unsigned fw;
+            U_memcpy(&fw, &data[5], 4);
+            ss = UI_StringStream(gcf);
+            U_sstream_put_str(ss, "firmware version: 0x");
+            U_sstream_put_u32hex(ss, fw);
+            U_sstream_put_str(ss, "\n");
+
+            UI_Puts(gcf, ss->str);
+        }
+
         if (len < sizeof(gcf->rxPacket))
         {
             U_memcpy(&gcf->rxPacket[0], data, len);
@@ -2749,16 +2772,16 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 static void gcfCommandResetUart(void)
 {
     const unsigned char cmd[] = {
-        0x0B, // command: write parmater
+        CMD_WRITE_PARAMETER,
         0x03, // seq
         0x00, // status
         0x0C, 0x00, // frame length (12)
         0x05, 0x00, // buffer length (5)
-        0x26, // param: watchdog timout (2 seconds)
-        0x02, 0x00, 0x00, 0x00
+        PARAM_WATCHDOG_TIMEOUT,
+        0x02, 0x00, 0x00, 0x00  // U32 timeout (2 seconds)
     };
 
-    PL_Printf(DBG_DEBUG, "send uart reset\n");
+    PL_Printf(DBG_INFO, "send uart reset\n");
 
     PROT_SendFlagged(cmd, sizeof(cmd));
 }
