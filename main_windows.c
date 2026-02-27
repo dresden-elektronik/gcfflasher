@@ -45,7 +45,7 @@ typedef struct
     HANDLE fd;
     HANDLE hOut;
     int running;
-    unsigned char rxbuf[64];
+    unsigned char rxbuf[1024];
     unsigned char txbuf[2048];
     unsigned long txpos;
 
