@@ -469,17 +469,17 @@ static int PL_Loop(GCF *gcf)
             break;
         }
 
+        if (platform.timer != 0)
+        {
+            if (platform.timer < PL_Time())
+            {
+                platform.timer = 0;
+                GCF_HandleEvent(gcf, EV_TIMEOUT);
+            }
+        }
+
         if (ret == 0)
         {
-            if (platform.timer != 0)
-            {
-                if (platform.timer < PL_Time())
-                {
-                    platform.timer = 0;
-                    GCF_HandleEvent(gcf, EV_TIMEOUT);
-                }
-            }
-
             continue;
         }
 
