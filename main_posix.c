@@ -142,8 +142,8 @@ int PL_ResetRaspBee(void)
 
 void PL_Print(const char *line)
 {
-    ssize_t n = write(STDOUT_FILENO, line, strlen(line));
-    (void)n;
+    fputs(line, stdout);
+    fflush(stdout);
 }
 
 void PL_Printf(DebugLevel level, const char *format, ...)
@@ -162,6 +162,7 @@ void PL_Printf(DebugLevel level, const char *format, ...)
     va_start (args, format);
     vfprintf(fp, format, args);
     va_end (args);
+    fflush(fp);
 }
 
 GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
