@@ -2115,6 +2115,7 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     char *p;
     GCF *gcf;
     U_SStream *ss;
+    unsigned printlen;
 
     Assert(len > 0);
 
@@ -2126,8 +2127,12 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     }
     else if (data[0] != BTL_MAGIC && gcf->task == T_CONNECT)
     {
+        printlen = len;
+        if (printlen > (sizeof(gcf->ascii) - 1) / 2)
+            printlen = (sizeof(gcf->ascii) - 1) / 2;
+
         p = &gcf->ascii[0];
-        for (i = 0; i < (int)len; i++, p += 2)
+        for (i = 0; i < (int)printlen; i++, p += 2)
         {
             put_hex(data[i], p);
         }
