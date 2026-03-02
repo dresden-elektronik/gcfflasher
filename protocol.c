@@ -74,8 +74,8 @@ int PROT_ReceiveFlagged(PROT_RxState *rx, const unsigned char *data, unsigned le
 nextTurn:
     for (; pos < len; )
     {
-        pos++;
         c = data[pos];
+        pos++;
 
         if (c == FR_END)
         {
