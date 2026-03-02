@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <dlfcn.h>
 #include <termios.h> /* POSIX terminal control definitions */
+#include <signal.h>
 
 #include "gcf.h"
 #include "protocol.h"
@@ -44,6 +45,7 @@ typedef struct
 
 static PL_Internal platform;
 static struct termios restore_attr;
+static volatile sig_atomic_t keyboard_initialized = 0;
 
 #ifdef PL_LINUX
 int plGetLinuxUSBDevices(Device *dev, Device *end);
@@ -403,14 +405,25 @@ static void PL_InitKeyboard(void)
     struct termios attr;
     tcgetattr(STDIN_FILENO, &attr);
     tcgetattr(STDIN_FILENO, &restore_attr);
+    keyboard_initialized = 1;
     attr.c_lflag &= ~(ICANON | ECHO); /* turn off canonical mode */
     tcsetattr(STDIN_FILENO, TCSANOW, &attr);
 }
 
 static void PL_AtExit(void)
 {
-    restore_attr.c_lflag |= (ICANON | ECHO); /* turn on canonical mode */
-    tcsetattr(STDIN_FILENO, TCSANOW, &restore_attr);
+    if (keyboard_initialized)
+    {
+        restore_attr.c_lflag |= (ICANON | ECHO); /* turn on canonical mode */
+        tcsetattr(STDIN_FILENO, TCSANOW, &restore_attr);
+    }
+}
+
+static void PL_SignalHandler(int sig)
+{
+    (void)sig;
+    PL_AtExit();
+    _exit(1);
 }
 
 static int PL_Loop(GCF *gcf)
@@ -551,6 +564,8 @@ int main(int argc, char *argv[])
     GCF *gcf;
 
     atexit(PL_AtExit);
+    signal(SIGINT, PL_SignalHandler);
+    signal(SIGTERM, PL_SignalHandler);
 
     gcf = GCF_Init(argc, argv);
     if (gcf == NULL)
