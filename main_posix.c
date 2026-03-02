@@ -513,6 +513,12 @@ static int PL_Loop(GCF *gcf)
             codepoint = 0;
             nread = (int) read(fds[0].fd, platform.rxbuf, sizeof(platform.rxbuf));
 
+            if (nread <= 0)
+            {
+                platform.running = 0;
+                continue;
+            }
+
             /* simplified input for ASCII and navigation keys */
 
             if (nread == 1)
