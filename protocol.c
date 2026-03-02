@@ -36,8 +36,8 @@ static void protPutc(unsigned char c)
 
 void PROT_SendFlagged(const unsigned char *data, unsigned len)
 {
+    unsigned i = 0;
     unsigned char c = 0;
-    unsigned short i = 0;
     unsigned short crc = 0;
 
     /* put an end before the packet */
@@ -63,8 +63,8 @@ int PROT_ReceiveFlagged(PROT_RxState *rx, const unsigned char *data, unsigned le
 {
     int err;
     unsigned i;
+    unsigned pos;
     unsigned char c;
-    unsigned short pos;
     unsigned short crc;
     unsigned short crc1;
 
