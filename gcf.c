@@ -356,6 +356,9 @@ static void UI_UpdateProgress(GCF *gcf)
 
     total = gcf->file.gcfFileSize;
 
+    if (total == 0)
+        return;
+
     UI_GetWinSize(&w, &h);
 
     wmax = w - 2 <= 80 ? w : 80; // cap line length
