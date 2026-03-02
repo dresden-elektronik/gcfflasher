@@ -415,6 +415,7 @@ static void PL_AtExit(void)
 {
     if (keyboard_initialized)
     {
+        keyboard_initialized = 0;
         restore_attr.c_lflag |= (ICANON | ECHO); /* turn on canonical mode */
         tcsetattr(STDIN_FILENO, TCSANOW, &restore_attr);
     }
