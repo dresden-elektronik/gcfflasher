@@ -1,0 +1,70 @@
+name: Build Windows packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: "x64"
+            cmake_arch: "x64"
+#          - arch: "x86"
+#            cmake_arch: "Win32"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release -DUSE_FTD2XX:BOOL=OFF -DUSE_SNIFF:BOOL=ON -A ${{ matrix.cmake_arch }} -S . -B build
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Rename executable
+        run: |
+          Move-Item "build/Release/gcfflasher.exe" "build/Release/GCFFlasher.exe"
+
+      - name: Create version string
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content CMakeLists.txt -Raw
+          if ($content -match 'VERSION\s+(\d+)\.(\d+)\.(\d+)') {
+            $major = $matches[1]
+            $minor = $matches[2].PadLeft(2, '0')
+            $patch = $matches[3].PadLeft(2, '0')
+            $zipVersion = "V${major}_${minor}_${patch}"
+            Write-Output "zip_version=$zipVersion" >> $env:GITHUB_OUTPUT
+            Write-Output "zip_version=$zipVersion"
+          }
+
+      - name: Create zip
+        run: |
+          Compress-Archive -Path "build/Release/GCFFlasher.exe" -DestinationPath "build/GCFFlasher_Win_${{ steps.version.outputs.zip_version }}_${{ matrix.arch }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcfflasher-${{ matrix.arch }}
+          path: build/GCFFlasher_Win_*_${{ matrix.arch }}.zip
+
+      - name: Upload binaries to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: ${{ github.ref_name }}
+          file: build/GCFFlasher_Win_*.zip
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
