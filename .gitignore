@@ -6,5 +6,6 @@ GCFFlasher
 *.dSYM/
 build*/
 debout/
+cred-macos
 cmake-build*
 linux-cross.Dockerfile

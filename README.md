@@ -114,12 +114,12 @@ cmake -B build .
 cmake --build build
 ```
 
-The executable is `build/GCFFlasher4`
+The executable is `build/GCFFlasher`
 
 ## Run
 
 ```
-$ ./GCFFlasher4
+$ ./GCFFlasher
 GCFFlasher 4.8.0 copyright dresden elektronik ingenieurtechnik gmbh
 usage: GCFFlasher <options>
 options:
