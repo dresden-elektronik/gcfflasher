@@ -1,0 +1,56 @@
+name: Build macOS packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: "arm64"
+            runner: "macos-15"
+          - arch: "x86_64"
+            runner: "macos-15-intel"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release -DUSE_NET:BOOL=OFF -DUSE_SNIFF:BOOL=ON -S . -B build
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Create ZIP
+        run: |
+          ARCH="$(uname -m)"
+          VERSION="$(grep 'VERSION' CMakeLists.txt | head -1 | sed 's/.*VERSION \([0-9.]*\).*/\1/')"
+          cp "build/GCFFlasher" "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"
+          zip "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned.zip" "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"
+          rm "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcfflasher-macos-${{ matrix.arch }}
+          path: GCFFlasher-*-macos-*-unsigned.zip
+
+      - name: Upload binaries to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: ${{ github.ref_name }}
+          file: GCFFlasher-*-macos-*-unsigned.zip
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true

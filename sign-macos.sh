@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ ! -e ./cred-macos ]; then
-	echo "ERROR: cred-macos not found"
-	exit 1
+# Load credentials from file if available (local development)
+if [ -e ./cred-macos ]; then
+	source ./cred-macos
 fi
-
-source ./cred-macos
 
 : "${DEVELOPER_ID_APPLICATION:?DEVELOPER_ID_APPLICATION not set}"
 : "${TEAM_ID:?TEAM_ID not set}"
