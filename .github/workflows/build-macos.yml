@@ -33,7 +33,7 @@ jobs:
       - name: Create ZIP
         run: |
           ARCH="$(uname -m)"
-          VERSION="$(grep 'VERSION' CMakeLists.txt | head -1 | sed 's/.*VERSION \([0-9.]*\).*/\1/')"
+          VERSION="$(grep '^project' CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/')"
           cp "build/GCFFlasher" "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"
           zip "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned.zip" "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"
           rm "GCFFlasher-${VERSION}-macos-${ARCH}-unsigned"

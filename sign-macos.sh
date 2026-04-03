@@ -11,7 +11,9 @@ fi
 : "${PASS:?PASS not set}"
 : "${APPLE_ID:?APPLE_ID not set}"
 
-ARCH="$(uname -m)"
+# Usage: sign-macos.sh [ARCH]
+# ARCH is optional; if not provided, uses uname -m (backward compatible)
+ARCH="${1:-$(uname -m)}"
 BINARY="build/GCFFlasher"
 SIGNED_BINARY="build/GCFFlasher-${ARCH}"
 ZIP_FILE="GCFFlasher-${ARCH}.zip"
