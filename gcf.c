@@ -1224,7 +1224,7 @@ static void sniffSendZep(GCF *gcf, const unsigned char *frame, unsigned frameLen
     U_bstream_put_u8(&bs, (unsigned char)gcf->sniffChannel);
     U_bstream_put_u8(&bs, 0); /* device ID */
     U_bstream_put_u8(&bs, 0);
-    U_bstream_put_u8(&bs, 0); /* CRC/LQI mode */
+    U_bstream_put_u8(&bs, 1); /* CRC/LQI mode: FCS present */
     U_bstream_put_u8(&bs, 0); /* LQI val */
 
     for (i = 0; i < 8; i++)
@@ -1286,14 +1286,19 @@ static void sniffV2Reply(GCF *gcf, const unsigned char *data, unsigned len)
 
     if (cmd == SNIFF_V2_CMD_PHY_FRAME)
     {
-        unsigned frameLen = (total >= 5 && total <= len) ? (total - 5) : 0;
+        /* Payload is D-field encoded: [u16 LE length][802.15.4 PSDU]. */
+        unsigned dlen, frameLen;
 
-        if (frameLen > 0)
-        {
-            if (gcf->uiDebugLevel != 0)
-                gcfDebugHex(gcf, "sniff v2 frame", &data[5], frameLen);
-            sniffSendZep(gcf, &data[5], frameLen);
-        }
+        if (total < 7 || total > len)
+            return;
+        dlen = (unsigned)data[5] | ((unsigned)data[6] << 8);
+        frameLen = total - 7;
+        if (dlen != frameLen)
+            return;
+
+        if (gcf->uiDebugLevel != 0)
+            gcfDebugHex(gcf, "sniff v2 frame", &data[7], frameLen);
+        sniffSendZep(gcf, &data[7], frameLen);
     }
     else if (cmd == SNIFF_V2_CMD_NET_STATE || cmd == SNIFF_V2_CMD_WRITE_PARAM ||
              cmd == SNIFF_V2_CMD_SNIFFER)
