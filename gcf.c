@@ -78,6 +78,20 @@
 #define CMD_STATUS_ELEN         0x08
 #define CMD_STATUS_EOFFSET      0x09
 
+/* Sniffer V2 serial commands (the deCONZ framed protocol, app firmware). The
+   inner frame is cmd, seq, status, u16 LE total length, payload. */
+#define SNIFF_V2_CMD_NET_STATE  0x08 /* CHANGE_NET_STATE, payload [state] */
+#define SNIFF_V2_CMD_WRITE_PARAM 0x0B /* WRITE_PARAM, payload [D-field] */
+#define SNIFF_V2_CMD_PHY_FRAME  0x1B /* PHY_FRAME (D->H push), payload [raw 802.15.4] */
+#define SNIFF_V2_CMD_SNIFFER    0x23 /* SNIFFER, payload [enable] */
+
+/* Sniffer V2 parameter ids / states */
+#define SNIFF_V2_PARAM_CHANNEL  0x32 /* sniffer channel (non-persistent) */
+#define SNIFF_V2_STATE_OFFLINE  0x00
+#define SNIFF_V2_STATE_ONLINE   0x02
+
+#define SNIFF_V2_UDPPORT        17754 /* Wireshark ZEP dissector port */
+
 typedef void (*state_handler_t)(GCF*, Event);
 
 typedef enum
@@ -88,7 +102,7 @@ typedef enum
     T_LIST,
     T_CONNECT,
     T_DUMP_FLASH,
-    T_SNIFF,
+    T_SNIFF_V2,
     T_HELP
 } Task;
 
@@ -165,9 +179,6 @@ typedef struct GCF_t
     /* sniffer state */
     int sniffChannel;
     const char *sniffHost;
-    unsigned sniffWp;
-    unsigned sniffLength;
-    unsigned char sniffPacket[256];
     unsigned sniffSeqNum;
     S_Udp sniffUdp;
 
@@ -215,12 +226,16 @@ static void ST_BootloaderQuery(GCF *gcf, Event event);
 static void ST_Connect(GCF *gcf, Event event);
 static void ST_Connected(GCF *gcf, Event event);
 
-static void ST_SniffConnect(GCF *gcf, Event event);
-static void ST_SniffConfig(GCF *gcf, Event event);
-static void ST_SniffConfigConfirm(GCF *gcf, Event event);
-static void ST_SniffSyncData(GCF *gcf, Event event);
-static void ST_SniffRecvData(GCF *gcf, Event event);
-static void ST_SniffTeardown(GCF *gcf, Event event);
+static void ST_SniffV2Connect(GCF *gcf, Event event);
+static void ST_SniffV2TearDown(GCF *gcf, Event event);
+static void ST_SniffV2SetChannel(GCF *gcf, Event event);
+static void ST_SniffV2Start(GCF *gcf, Event event);
+static void ST_SniffV2Recv(GCF *gcf, Event event);
+static void ST_SniffV2Stop(GCF *gcf, Event event);
+
+static void sniffV2SendCommand(GCF *gcf, unsigned char cmd, const unsigned char *payload, unsigned payloadLen);
+static void sniffV2Reply(GCF *gcf, const unsigned char *data, unsigned len);
+static void sniffSendZep(GCF *gcf, const unsigned char *frame, unsigned frameLen);
 
 static void ST_DumpFlashConnect(GCF *gcf, Event event);
 static void ST_DumpFlashQueryFirmwareVersion(GCF *gcf, Event event);
@@ -1188,306 +1203,285 @@ static void ST_Connected(GCF *gcf, Event event)
 
 #ifdef USE_SNIFF
 
-static void ST_SniffConnect(GCF *gcf, Event event)
+/* Build and send a ZEP v2 data packet for a raw 802.15.4 frame to the
+   Wireshark UDP endpoint (port 17754). */
+static void sniffSendZep(GCF *gcf, const unsigned char *frame, unsigned frameLen)
+{
+    U_BStream bs;
+    char buf[256];
+    unsigned i;
+
+    if (frameLen == 0 || frameLen > 127)
+        return;
+
+    U_bstream_init(&bs, &buf[0], sizeof(buf));
+
+    U_bstream_put_u8(&bs, (unsigned char)'E');
+    U_bstream_put_u8(&bs, (unsigned char)'X');
+    U_bstream_put_u8(&bs, 2); /* version */
+    U_bstream_put_u8(&bs, 1); /* type: data */
+
+    U_bstream_put_u8(&bs, (unsigned char)gcf->sniffChannel);
+    U_bstream_put_u8(&bs, 0); /* device ID */
+    U_bstream_put_u8(&bs, 0);
+    U_bstream_put_u8(&bs, 0); /* CRC/LQI mode */
+    U_bstream_put_u8(&bs, 0); /* LQI val */
+
+    for (i = 0; i < 8; i++)
+        U_bstream_put_u8(&bs, 0); /* NTP timestamp */
+
+    U_bstream_put_u32_be(&bs, gcf->sniffSeqNum);
+    gcf->sniffSeqNum++;
+
+    for (i = 0; i < 10; i++)
+        U_bstream_put_u8(&bs, 0); /* reserved */
+
+    U_bstream_put_u8(&bs, (unsigned char)frameLen); /* length */
+    for (i = 0; i < frameLen; i++)
+        U_bstream_put_u8(&bs, frame[i]); /* data */
+
+    SOCK_UdpSend(&gcf->sniffUdp, bs.data, bs.pos);
+}
+
+/* Send a sniffer-V2 command. The inner frame is cmd, seq, status, u16 LE
+   total length, payload; total length = 5 + payloadLen. */
+static void sniffV2SendCommand(GCF *gcf, unsigned char cmd, const unsigned char *payload, unsigned payloadLen)
+{
+    unsigned char inner[16];
+    unsigned total = 5 + payloadLen;
+
+    if (total > sizeof(inner))
+        return;
+
+    inner[0] = cmd;
+    inner[1] = gcfSeq++;
+    inner[2] = 0; /* status */
+    inner[3] = (unsigned char)(total & 0xff);
+    inner[4] = (unsigned char)((total >> 8) & 0xff);
+    if (payloadLen > 0)
+        U_memcpy(&inner[5], payload, payloadLen);
+
+    PROT_SendFlagged(inner, total);
+}
+
+/* True if the last saved sniffer-V2 reply matches cmd and has status OK. */
+static int sniffV2ReplyOk(GCF *gcf, unsigned char cmd)
+{
+    return (gcf->rxPacketLength >= 3 && gcf->rxPacket[0] == cmd &&
+            gcf->rxPacket[2] == CMD_STATUS_SUCCESS);
+}
+
+/* Handle a received sniffer-V2 inner frame: a PHY_FRAME push or a config
+   reply. */
+static void sniffV2Reply(GCF *gcf, const unsigned char *data, unsigned len)
+{
+    unsigned char cmd;
+    unsigned total;
+
+    if (len < 5)
+        return;
+
+    cmd = data[0];
+    total = (unsigned)data[3] | ((unsigned)data[4] << 8);
+
+    if (cmd == SNIFF_V2_CMD_PHY_FRAME)
+    {
+        unsigned frameLen = (total >= 5 && total <= len) ? (total - 5) : 0;
+
+        if (frameLen > 0)
+        {
+            if (gcf->uiDebugLevel != 0)
+                gcfDebugHex(gcf, "sniff v2 frame", &data[5], frameLen);
+            sniffSendZep(gcf, &data[5], frameLen);
+        }
+    }
+    else if (cmd == SNIFF_V2_CMD_NET_STATE || cmd == SNIFF_V2_CMD_WRITE_PARAM ||
+             cmd == SNIFF_V2_CMD_SNIFFER)
+    {
+        if (len < sizeof(gcf->rxPacket))
+        {
+            U_memcpy(&gcf->rxPacket[0], data, len);
+            gcf->rxPacketLength = (int)len;
+            GCF_HandleEvent(gcf, EV_RX_PKG_DATA);
+        }
+    }
+}
+
+static void ST_SniffV2Connect(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
         gcf->sniffSeqNum = 0;
 
         SOCK_UdpInit(&gcf->sniffUdp, SOCK_GetHostAF(gcf->sniffHost));
-        SOCK_UdpSetPeer(&gcf->sniffUdp, gcf->sniffHost, 17754);
+        SOCK_UdpSetPeer(&gcf->sniffUdp, gcf->sniffHost, SNIFF_V2_UDPPORT);
 
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
         {
-            gcf->state = ST_SniffConfig;
-            PL_SetTimeout(250);
+            gcf->state = ST_SniffV2TearDown;
+            GCF_HandleEvent(gcf, EV_ACTION);
         }
         else
         {
-            gcf->state = ST_SniffTeardown;
             UI_Puts(gcf, "failed to connect\n");
-            PL_SetTimeout(10000);
+            gcf->state = ST_SniffV2Stop;
+            GCF_HandleEvent(gcf, EV_ACTION);
         }
     }
 }
 
-static void ST_SniffConfig(GCF *gcf, Event event)
+static void ST_SniffV2TearDown(GCF *gcf, Event event)
 {
-    U_SStream ss;
-    char buf[128];
+    static const unsigned char offline[] = { SNIFF_V2_STATE_OFFLINE };
 
-    if (event == EV_TIMEOUT)
+    if (event == EV_ACTION)
     {
-        U_sstream_init(&ss, &buf[0], sizeof(buf));
-        U_sstream_put_str(&ss, "\nidle\n");
-        U_sstream_put_str(&ss, "\nchan ");
-        U_sstream_put_long(&ss, gcf->sniffChannel);
-        U_sstream_put_str(&ss, "\n");
-        U_sstream_put_str(&ss, "\nsniff\n");
-
-        PROT_Write((unsigned char*)&buf[0], ss.pos);
-
-        gcf->wp = 0;
-
-        gcf->state = ST_SniffConfigConfirm;
+        UI_Puts(gcf, "sniff v2: disconnect network\n");
+        sniffV2SendCommand(gcf, SNIFF_V2_CMD_NET_STATE, offline, sizeof(offline));
         PL_SetTimeout(1000);
     }
-    else if (event == EV_DISCONNECTED)
+    else if (event == EV_RX_PKG_DATA)
     {
-        PL_ClearTimeout();
-        gcf->state = ST_SniffTeardown;
-        PL_SetTimeout(1000);
-    }
-}
-
-static void ST_SniffConfigConfirm(GCF *gcf, Event event)
-{
-    U_SStream ss;
-
-    if (event == EV_RX_ASCII)
-    {
-        U_sstream_init(&ss, &gcf->ascii[0], gcf->wp);
-
-        if (U_sstream_find(&ss, "OK"))
+        if (sniffV2ReplyOk(gcf, SNIFF_V2_CMD_NET_STATE))
         {
             PL_ClearTimeout();
-            gcf->state = ST_SniffSyncData;
-            gcf->sniffWp = 0;
-            gcf->sniffLength = 0;
-            UI_Puts(gcf, "sniffing started, send traffic to host ");
-            UI_Puts(gcf, gcf->sniffHost);
-            UI_Puts(gcf, " port 17754\n");
-            PL_SetTimeout(3600000);
-            gcf->wp = 0;
-            gcf->rp = 0;
+            gcf->state = ST_SniffV2SetChannel;
+            GCF_HandleEvent(gcf, EV_ACTION);
         }
     }
     else if (event == EV_TIMEOUT)
     {
-        gcf->state = ST_SniffTeardown;
+        UI_Puts(gcf, "sniff v2: teardown timeout\n");
+        gcf->state = ST_SniffV2Stop;
         PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
     }
     else if (event == EV_DISCONNECTED)
     {
-        PL_ClearTimeout();
-        gcf->state = ST_SniffTeardown;
+        gcf->state = ST_SniffV2Stop;
         PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
     }
 }
 
-static void ST_SniffSyncData(GCF *gcf, Event event)
+static void ST_SniffV2SetChannel(GCF *gcf, Event event)
 {
-    unsigned i;
+    unsigned char payload[4];
 
-    if (event == EV_RX_ASCII || event == EV_PL_LOOP)
+    if (event == EV_ACTION)
     {
-        gcf->sniffLength = 0;
-
-        if (gcf->rp < gcf->wp)
-        {
-            for (;gcf->ascii[gcf->rp] != 0x01 && gcf->rp < gcf->wp;)
-            {
-                gcf->rp += 1; /* forward to start marker */
-            }
-
-            i = gcf->rp;
-
-            /* frame starts with 0x01 and ends with trailer 0x04 */
-            if (gcf->ascii[i] == 0x01 && (i + 1) < gcf->wp)
-            {
-                gcf->sniffWp = 0;
-                gcf->sniffLength = (unsigned)gcf->ascii[i + 1] & 0xFF;
-
-                if (gcf->sniffLength < 8) /* min. frame length due 8byte dummy timestamp 01..08 */
-                {
-                    gcf->rp += 1;
-                    return;
-                }
-
-                if ((2 + gcf->sniffLength) < (gcf->wp - gcf->rp))
-                {
-                    if (gcf->ascii[i + 2 + gcf->sniffLength] == 0x04) /* full frame */
-                    {
-                        gcf->rp = i + 2;
-                        gcf->state = ST_SniffRecvData;
-                        GCF_HandleEvent(gcf, EV_RX_ASCII);
-                    }
-                    else
-                    {
-                        /* invalid frame */
-                        gcf->rp += 1;
-                    }
-                }
-
-                return;
-            }
-        }
-
-        /* no sync data found */
-        gcf->rp = 0;
-        gcf->wp = 0;
+        payload[0] = 0x02; /* D-field length */
+        payload[1] = 0x00;
+        payload[2] = SNIFF_V2_PARAM_CHANNEL;
+        payload[3] = (unsigned char)gcf->sniffChannel;
+        sniffV2SendCommand(gcf, SNIFF_V2_CMD_WRITE_PARAM, payload, sizeof(payload));
+        PL_SetTimeout(1000);
     }
+    else if (event == EV_RX_PKG_DATA)
+    {
+        if (sniffV2ReplyOk(gcf, SNIFF_V2_CMD_WRITE_PARAM))
+        {
+            PL_ClearTimeout();
+            gcf->state = ST_SniffV2Start;
+            GCF_HandleEvent(gcf, EV_ACTION);
+        }
+    }
+    else if (event == EV_TIMEOUT)
+    {
+        UI_Puts(gcf, "sniff v2: set channel timeout\n");
+        gcf->state = ST_SniffV2Stop;
+        PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
+    }
+    else if (event == EV_DISCONNECTED)
+    {
+        gcf->state = ST_SniffV2Stop;
+        PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
+    }
+}
+
+static void ST_SniffV2Start(GCF *gcf, Event event)
+{
+    static const unsigned char enable[] = { 0x01 };
+
+    if (event == EV_ACTION)
+    {
+        sniffV2SendCommand(gcf, SNIFF_V2_CMD_SNIFFER, enable, sizeof(enable));
+        PL_SetTimeout(1000);
+    }
+    else if (event == EV_RX_PKG_DATA)
+    {
+        if (sniffV2ReplyOk(gcf, SNIFF_V2_CMD_SNIFFER))
+        {
+            PL_ClearTimeout();
+            UI_Puts(gcf, "sniffing, sending 802.15.4 frames to host ");
+            UI_Puts(gcf, gcf->sniffHost);
+            UI_Puts(gcf, " port 17754\n");
+            gcf->state = ST_SniffV2Recv;
+            PL_SetTimeout(3600000);
+        }
+        else
+        {
+            UI_Puts(gcf, "sniff v2: enable failed\n");
+            gcf->state = ST_SniffV2Stop;
+            PL_SetTimeout(1000);
+            GCF_HandleEvent(gcf, EV_ACTION);
+        }
+    }
+    else if (event == EV_TIMEOUT)
+    {
+        UI_Puts(gcf, "sniff v2: start timeout\n");
+        gcf->state = ST_SniffV2Stop;
+        PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
+    }
+    else if (event == EV_DISCONNECTED)
+    {
+        gcf->state = ST_SniffV2Stop;
+        PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
+    }
+}
+
+static void ST_SniffV2Recv(GCF *gcf, Event event)
+{
+    /* The 0x1B PHY_FRAME pushes are handled in PROT_Packet (sniffSendZep).
+       This state just waits for the stop (timeout or disconnect). */
     if (event == EV_TIMEOUT)
     {
-        gcf->state = ST_SniffTeardown;
+        gcf->state = ST_SniffV2Stop;
         PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
     }
     else if (event == EV_DISCONNECTED)
     {
-        PL_ClearTimeout();
-        gcf->state = ST_SniffTeardown;
+        gcf->state = ST_SniffV2Stop;
         PL_SetTimeout(1000);
+        GCF_HandleEvent(gcf, EV_ACTION);
     }
 }
 
-static void ST_SniffRecvData(GCF *gcf, Event event)
+static void ST_SniffV2Stop(GCF *gcf, Event event)
 {
-    unsigned i;
-    unsigned char type;
-    U_SStream *ss;
-    U_BStream bs;
-    char buf[256];
+    static const unsigned char disable[] = { 0x00 };
+    static const unsigned char online[] = { SNIFF_V2_STATE_ONLINE };
 
-    if (event == EV_RX_ASCII)
+    if (event == EV_ACTION)
     {
-        for (i = gcf->rp; i < gcf->wp; i++)
-        {
-            Assert(gcf->sniffWp < sizeof(gcf->sniffPacket));
-            Assert(gcf->rp < sizeof(gcf->ascii));
-            gcf->sniffPacket[gcf->sniffWp] = gcf->ascii[gcf->rp];
-            gcf->sniffWp++;
-            gcf->rp++;
-
-            if (gcf->sniffWp == gcf->sniffLength + 1) /* extra 0x04 end marker */
-                break;
-        }
-
-        /* move unprocessed data to start in gcf->ascii */
-        for (i = 0; gcf->rp < gcf->wp; i++)
-        {
-            gcf->ascii[i] = gcf->ascii[gcf->rp];
-            gcf->rp++;
-        }
-
-        gcf->rp = 0;
-        gcf->wp = i;
-
-        if (gcf->sniffWp == gcf->sniffLength + 1)
-        {
-            if (gcf->sniffPacket[gcf->sniffLength] == 0x04) /* end marker */
-            {
-                if (gcf->uiDebugLevel != 0)
-                {
-                    ss = UI_StringStream(gcf);
-                    U_sstream_put_str(ss, "pkg(");
-                    U_sstream_put_long(ss, (long)gcf->sniffLength);
-                    U_sstream_put_str(ss, "/");
-                    U_sstream_put_long(ss, (long)gcf->sniffSeqNum);
-                    U_sstream_put_str(ss, ") ");
-
-                    for (i = 0; i < gcf->sniffLength; i++)
-                    {
-                        U_sstream_put_u8hex(ss, (unsigned char)gcf->ascii[i]);
-                        U_sstream_put_str(ss, " ");
-                    }
-
-                    U_sstream_put_str(ss, "\n");
-                    UI_Puts(gcf, ss->str);
-                }
-
-                /*------------------------------------------------------------
-                *
-                *      ZEP Packets must be received in the following format:
-                *      |UDP Header|  ZEP Header |IEEE 802.15.4 Packet|
-                *      | 8 bytes  | 16/32 bytes |    <= 127 bytes    |
-                *------------------------------------------------------------
-                *
-                *      ZEP v1 Header will have the following format:
-                *      |Preamble|Version|Channel ID|Device ID|CRC/LQI Mode|LQI Val|Reserved|Length|
-                *      |2 bytes |1 byte |  1 byte  | 2 bytes |   1 byte   |1 byte |7 bytes |1 byte|
-                *
-                *      ZEP v2 Header will have the following format (if type=1/Data):
-                *      |Preamble|Version| Type |Channel ID|Device ID|CRC/LQI Mode|LQI Val|NTP Timestamp|Sequence#|Reserved|Length|
-                *      |2 bytes |1 byte |1 byte|  1 byte  | 2 bytes |   1 byte   |1 byte |   8 bytes   | 4 bytes |10 bytes|1 byte|
-                *
-                *      ZEP v2 Header will have the following format (if type=2/Ack):
-                *      |Preamble|Version| Type |Sequence#|
-                *      |2 bytes |1 byte |1 byte| 4 bytes |
-                *------------------------------------------------------------
-                */
-                U_bstream_init(&bs, &buf[0], sizeof(buf));
-
-                U_bstream_put_u8(&bs, (unsigned char)'E');
-                U_bstream_put_u8(&bs, (unsigned char)'X');
-                U_bstream_put_u8(&bs, 2); /* version */
-
-                type = gcf->sniffLength >= (8 + 5) ? 1 : 2; /* data(1), ack(2) */
-                U_bstream_put_u8(&bs, type);
-
-                if (type == 1) /* data */
-                {
-                    U_bstream_put_u8(&bs, gcf->sniffChannel);
-                    U_bstream_put_u8(&bs, 0); /* device ID */
-                    U_bstream_put_u8(&bs, 0); /* device ID */
-                    U_bstream_put_u8(&bs, 0); /* CRC/LQI mode*/
-                    U_bstream_put_u8(&bs, 0); /* LQI val */
-
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                    U_bstream_put_u8(&bs, 0); /* NTP timestamp */
-                }
-
-                U_bstream_put_u32_be(&bs, gcf->sniffSeqNum);
-                gcf->sniffSeqNum++;
-
-                if (type == 1) /* data */
-                {
-                    for (i = 0; i < 10; i++)
-                        U_bstream_put_u8(&bs, 0); /* reserved 10 bytes */
-
-                    U_bstream_put_u8(&bs, gcf->sniffLength - 8); /* length */
-                    for (i = 8; i < gcf->sniffLength; i++)
-                        U_bstream_put_u8(&bs, gcf->sniffPacket[i]); /* data */
-                }
-
-                SOCK_UdpSend(&gcf->sniffUdp, bs.data, bs.pos);
-            }
-
-            gcf->sniffWp = 0;
-            gcf->sniffLength = 0;
-            gcf->state = ST_SniffSyncData;
-        }
-    }
-    if (event == EV_TIMEOUT)
-    {
-        gcf->state = ST_SniffTeardown;
-        PL_SetTimeout(1000);
-    }
-    else if (event == EV_DISCONNECTED)
-    {
+        /* best-effort: stop the sniffer and reconnect the network */
+        sniffV2SendCommand(gcf, SNIFF_V2_CMD_SNIFFER, disable, sizeof(disable));
+        sniffV2SendCommand(gcf, SNIFF_V2_CMD_NET_STATE, online, sizeof(online));
+        SOCK_UdpFree(&gcf->sniffUdp);
         PL_ClearTimeout();
-        gcf->state = ST_SniffTeardown;
+        UI_Puts(gcf, "sniffer stop\n");
+        gcf->state = ST_Init;
         PL_SetTimeout(1000);
     }
-}
-
-static void ST_SniffTeardown(GCF *gcf, Event event)
-{
-    (void)event;
-
-    SOCK_UdpFree(&gcf->sniffUdp);
-    PL_ClearTimeout();
-    gcf->state = ST_Init;
-    UI_Puts(gcf, "sniffer stop\n");
-    PL_SetTimeout(1000);
 }
 
 #endif /* USE_SNIFF */
+
 
 static void ST_DumpFlashConnect(GCF *gcf, Event event)
 {
@@ -1705,7 +1699,7 @@ void GCF_HandleEvent(GCF *gcf, Event event)
     PL_Printf(DBG_DEBUG, "GCF_HandleEvent: state: %s, event: %d\n", str, (int)event);
 #endif
 
-    if (event == EV_PL_LOOP && gcf->state == ST_SniffSyncData)
+    if (event == EV_PL_LOOP && gcf->state == ST_SniffV2Recv)
     {
         /* allowed to process loop */
     }
@@ -1873,8 +1867,7 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
 
     /*gcfDebugHex(gcf, "recv", data, len);*/
 
-    if (gcf->task == T_SNIFF ||
-        gcf->state == ST_BootloaderQuery ||
+    if (gcf->state == ST_BootloaderQuery ||
         gcf->state == ST_V1ProgramSync ||
         gcf->state == ST_V1ProgramWriteHeader ||
         gcf->state == ST_V1ProgramUpload ||
@@ -1913,11 +1906,6 @@ void GCF_Received(GCF *gcf, const unsigned char *data, int len)
         if (ascii > 0)
         {
             GCF_HandleEvent(gcf, EV_RX_ASCII);
-        }
-
-        if (gcf->task == T_SNIFF)
-        {
-            return;
         }
     }
 
@@ -2123,6 +2111,14 @@ void PROT_Packet(const unsigned char *data, unsigned len)
     Assert(len > 0);
 
     gcf = &gcfLocal;
+
+    /* Sniffer V2 (the deCONZ framed protocol): handle the PHY_FRAME pushes
+       and the config replies, then return (the flashing protocol is below). */
+    if (gcf->task == T_SNIFF_V2)
+    {
+        sniffV2Reply(gcf, data, len);
+        return;
+    }
 
     if (gcf->uiInteractive && gcf->uiInputSize)
     {
@@ -2594,7 +2590,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
                         return GCF_FAILED;
                     }
 
-                    gcf->task = T_SNIFF;
+                    gcf->task = T_SNIFF_V2;
                     gcf->sniffChannel = (int)longval;
                 } break;
 
@@ -2736,7 +2732,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
         ret = GCF_SUCCESS;
     }
 #ifdef USE_SNIFF
-    else if (gcf->task == T_SNIFF)
+    else if (gcf->task == T_SNIFF_V2)
     {
         if (gcf->devpath[0] == '\0')
         {
@@ -2744,7 +2740,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
             return GCF_FAILED;
         }
 
-        gcf->state = ST_SniffConnect;
+        gcf->state = ST_SniffV2Connect;
         ret = GCF_SUCCESS;
     }
 #endif /* USE_SNIFF */
