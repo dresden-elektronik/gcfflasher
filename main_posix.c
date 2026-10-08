@@ -328,6 +328,27 @@ int PROT_Putc(unsigned char ch)
     return 1;
 }
 
+static int plWaitWritable(int timeoutMs)
+{
+    struct pollfd pfd;
+
+    pfd.fd = platform.fd;
+    pfd.events = POLLOUT;
+    pfd.revents = 0;
+
+    for (;;)
+    {
+        int n = poll(&pfd, 1, timeoutMs);
+        if (n > 0)
+            return 1;
+        if (n == 0)
+            return 0;
+        if (errno == EINTR)
+            continue;
+        return 0;
+    }
+}
+
 int PROT_Flush(void)
 {
     int n;
@@ -359,6 +380,12 @@ int PROT_Flush(void)
         {
             if (errno == EINTR)
                 continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                if (!plWaitWritable(1000))
+                    break;
+                continue;
+            }
             PL_Printf(DBG_DEBUG, "write() failed: %s\n", strerror(errno));
             break;
         }
