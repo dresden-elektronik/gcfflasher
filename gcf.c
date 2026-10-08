@@ -56,6 +56,15 @@
 
 /* Bootloader V1 */
 #define V1_PAGESIZE 256
+#define V1_ID_WAIT_MS 1500
+#define V1_ID_ATTEMPTS 3
+
+/* Native USB sticks re-enumerate after the watchdog reset */
+#define RESET_TIMEOUT_MS 6000
+#define BTL_ID_WAIT_MS 200
+#define BTL_CONNECT_SETTLE_MS 500
+#define BTL_CONNECT_RETRY_MS 500
+#define BTL_CONNECT_ATTEMPTS 20
 
 /* Serial commands */
 #define CMD_STATUS             0x07
@@ -513,7 +522,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
-        PL_SetTimeout(3000);
+        PL_SetTimeout(RESET_TIMEOUT_MS);
 
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
         {
@@ -697,8 +706,9 @@ static void ST_Program(GCF *gcf, Event event)
         }
         else
         {
-            PL_SetTimeout(500);
+            PL_SetTimeout(BTL_CONNECT_SETTLE_MS);
             gcf->state = ST_BootloaderConnect;
+            GCF_HandleEvent(gcf, EV_ACTION);
         }
     }
     else if (event == EV_RESET_FAILED)
@@ -710,17 +720,26 @@ static void ST_Program(GCF *gcf, Event event)
 static void ST_BootloaderConnect(GCF *gcf, Event event)
 {
     U_SStream *ss;
-    if (event == EV_TIMEOUT)
+    if (event == EV_ACTION)
+    {
+        gcf->retry = 0;
+        PL_SetTimeout(BTL_CONNECT_SETTLE_MS);
+    }
+    else if (event == EV_TIMEOUT)
     {
         if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
         {
             gcf->state = ST_BootloaderQuery;
             GCF_HandleEvent(gcf, EV_ACTION);
         }
+        else if (++gcf->retry >= BTL_CONNECT_ATTEMPTS)
+        {
+            UI_Puts(gcf, "failed to connect bootloader\n");
+            gcfRetry(gcf);
+        }
         else
         {
-            // todo retry, a couple of times and revert to gcfRetry()
-            PL_SetTimeout(500);
+            PL_SetTimeout(BTL_CONNECT_RETRY_MS);
             ss = UI_StringStream(gcf);
             U_sstream_put_str(ss, "retry connect bootloader ");
             U_sstream_put_str(ss, gcf->devpath);
@@ -753,12 +772,12 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
         gcf->ascii[0] = '\0';
         U_bzero(&gcf->ascii[0], sizeof(gcf->ascii));
 
-        /* 1) wait for ConBee I and RaspBee I, which send ID on their own */
-        PL_SetTimeout(200);
+        /* 1) wait for ConBee I and RaspBee I, which send ID -> banner */
+        PL_SetTimeout(gcf->file.gcfFileType < 30 ? V1_ID_WAIT_MS : BTL_ID_WAIT_MS);
     }
     else if (event == EV_TIMEOUT)
     {
-        if (++gcf->retry == 3)
+        if (++gcf->retry >= V1_ID_ATTEMPTS)
         {
             UI_Puts(gcf, "query bootloader failed\n");
             gcfRetry(gcf);
@@ -775,7 +794,7 @@ static void ST_BootloaderQuery(GCF *gcf, Event event)
             buf[1] = 'D';
 
             PROT_Write(buf, sizeof(buf));
-            PL_SetTimeout(200);
+            PL_SetTimeout(V1_ID_WAIT_MS);
         }
         else if (gcf->file.gcfFileType >= 30)
         {
