@@ -80,6 +80,13 @@ typedef unsigned long long PL_time_t;
 GCF *GCF_Init(int argc, char *argv[]);
 void GCF_Exit(GCF *gcf);
 
+#ifdef USE_SNIFF
+/*! 1 if the sniffer task is the active task. */
+int GCF_SniffActive(GCF *gcf);
+/*! Best-effort sniffer stop: disable the sniffer and bring the device online. */
+void GCF_SnifferStop(GCF *gcf);
+#endif /* USE_SNIFF */
+
 /*! Called from platform layer when \p data has been received, \p len must be > 0. */
 void GCF_Received(GCF *gcf, const unsigned char *data, int len);
 /*! Called from platform layer for keyboard input. */

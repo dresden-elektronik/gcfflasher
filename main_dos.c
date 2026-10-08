@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
+#include <signal.h>
 
 #include "gcf.h"
 #include "u_sstream.h"
@@ -340,6 +341,14 @@ void __interrupt __far timer_rtn()
     _chain_intr( prev_int_1c );
 }
 
+static volatile int gcfStopRequested = 0;
+
+static void PL_SignalHandler(int sig)
+{
+    (void)sig;
+    gcfStopRequested = 1; /* handled in PL_Loop: clean sniffer stop */
+}
+
 static void PL_Loop(GCF *gcf)
 {
     unsigned pos;
@@ -355,6 +364,16 @@ static void PL_Loop(GCF *gcf)
 
     while (platform.running)
     {
+        if (gcfStopRequested)
+        {
+            gcfStopRequested = 0;
+#ifdef USE_SNIFF
+            if (GCF_SniffActive(gcf))
+                GCF_SnifferStop(gcf);
+#endif /* USE_SNIFF */
+            break;
+        }
+
         GCF_HandleEvent(gcf, EV_PL_LOOP);
 
         outp(platform.com_port + 1 , 0);        /* Turn off interrupts */
@@ -400,6 +419,8 @@ int main(int argc, char **argv)
     GCF *gcf = GCF_Init(argc, argv);
     if (gcf == NULL)
         return 2;
+
+    signal(SIGINT, PL_SignalHandler);
 
     PL_Loop(gcf);
 

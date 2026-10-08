@@ -36,6 +36,7 @@ typedef struct
     PL_time_t timer;
     int fd;
     unsigned char running;
+    unsigned char stdinOpen;
     unsigned char rxbuf[RX_BUF_SIZE];
     unsigned char txbuf[TX_BUF_SIZE];
     unsigned tx_rp;
@@ -67,7 +68,7 @@ static int plSetupPort(int fd, int baudrate)
 {
     struct termios options;
 
-    fcntl(fd, F_SETFL, O_RDWR | /*O_NONBLOCK |*/ O_NOCTTY);
+    fcntl(fd, F_SETFL, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
     tcgetattr(fd, &options);
 
@@ -177,13 +178,13 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         return GCF_SUCCESS;
     }
 
-    platform.fd = open(path, O_CLOEXEC | O_RDWR /*| O_NONBLOCK*/);
+    platform.fd = open(path, O_CLOEXEC | O_RDWR | O_NONBLOCK);
     platform.tx_rp = 0;
     platform.tx_wp = 0;
 
     if (platform.fd < 0)
     {
-        PL_Printf(DBG_DEBUG, "failed to open device %s\n", path);
+        PL_Printf(DBG_DEBUG, "failed to open device %s: %s\n", path, strerror(errno));
         platform.fd = 0;
         return GCF_FAILED;
     }
@@ -421,11 +422,12 @@ static void PL_AtExit(void)
     }
 }
 
+static volatile sig_atomic_t gcfStopRequested = 0;
+
 static void PL_SignalHandler(int sig)
 {
     (void)sig;
-    PL_AtExit();
-    _exit(1);
+    gcfStopRequested = 1; /* handled in PL_Loop: clean sniffer stop */
 }
 
 static int PL_Loop(GCF *gcf)
@@ -442,6 +444,7 @@ static int PL_Loop(GCF *gcf)
     platform.gcf = gcf;
 
     platform.running = 1;
+    platform.stdinOpen = 1;
 
     fds[0].events = POLLIN;
     fds[1].events = POLLIN;
@@ -450,12 +453,25 @@ static int PL_Loop(GCF *gcf)
 
     while (platform.running)
     {
+        if (gcfStopRequested)
+        {
+            gcfStopRequested = 0;
+#ifdef USE_SNIFF
+            if (GCF_SniffActive(gcf))
+            {
+                GCF_SnifferStop(gcf);
+                poll(NULL, 0, 100); /* let the device process stop + online */
+            }
+#endif /* USE_SNIFF */
+            break;
+        }
+
         GCF_HandleEvent(gcf, EV_PL_LOOP);
 
         nfds = 0;
 
         /* always poll STDIN at fds[0], to get poll() timeout and keyboard input */
-        fds[nfds++].fd = STDIN_FILENO;
+        fds[nfds++].fd = platform.stdinOpen ? STDIN_FILENO : -1;
 
         /* when device is connected fds[1] */
         if (platform.fd != 0)
@@ -465,6 +481,9 @@ static int PL_Loop(GCF *gcf)
 
         if (ret < 0)
         {
+            if (errno == EINTR)
+                continue; /* signal interrupted poll, handle it at the loop top */
+
             PL_Printf(DBG_DEBUG, "poll error: %s\n", strerror(errno));
             break;
         }
@@ -508,13 +527,21 @@ static int PL_Loop(GCF *gcf)
         }
 
         /* keyboard input */
-        if (fds[0].revents & POLLIN)
+        if (platform.stdinOpen && (fds[0].revents & POLLIN))
         {
             codepoint = 0;
             nread = (int) read(fds[0].fd, platform.rxbuf, sizeof(platform.rxbuf));
 
             if (nread <= 0)
             {
+#ifdef USE_SNIFF
+                if (GCF_SniffActive(gcf))
+                {
+                    /* a sniffer runs until Ctrl-C, closed input must not end it */
+                    platform.stdinOpen = 0;
+                    continue;
+                }
+#endif /* USE_SNIFF */
                 platform.running = 0;
                 continue;
             }

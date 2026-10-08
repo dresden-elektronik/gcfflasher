@@ -939,6 +939,19 @@ static void plInitOutput(void)
     */
 }
 
+static volatile int gcfStopRequested = 0;
+
+static BOOL WINAPI plConsoleCtrlHandler(DWORD ctrlType)
+{
+    if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
+    {
+        gcfStopRequested = 1; /* handled in PL_Loop: clean sniffer stop */
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 static void PL_Loop(GCF *gcf)
 {
     ZeroMemory(&platform, sizeof(platform));
@@ -950,11 +963,26 @@ static void PL_Loop(GCF *gcf)
     platform.running = 1;
     platform.frequencyValid = QueryPerformanceFrequency(&platform.frequency);
 
+    SetConsoleCtrlHandler(plConsoleCtrlHandler, TRUE);
+
     GCF_HandleEvent(gcf, EV_PL_STARTED);
 
     BOOL Status;
     while (platform.running)
     {
+        if (gcfStopRequested)
+        {
+            gcfStopRequested = 0;
+#ifdef USE_SNIFF
+            if (GCF_SniffActive(gcf))
+            {
+                GCF_SnifferStop(gcf);
+                Sleep(100); /* let the device process stop + online */
+            }
+#endif /* USE_SNIFF */
+            break;
+        }
+
         GCF_HandleEvent(gcf, EV_PL_LOOP);
 
         if (platform.fd == INVALID_HANDLE_VALUE)
