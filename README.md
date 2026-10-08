@@ -26,6 +26,7 @@ The sources are POSIX compliant with a small platform specific layer, to make po
 * To use the sniffer mode on ConBee I and ConBee II the ZShark sniffer firmware needs to be installed. It can be downloaded at https://deconz.dresden-elektronik.de/deconz-firmware
 * Sniffer mode supports both sniffer firmwares, the legacy ASCII (ZShark) firmware and the deCONZ V2 framed protocol. The protocol is auto-detected on connect and the 802.15.4 frames are sent as ZEP packets to UDP port 17754. The sniffer runs until it is stopped with Ctrl-C.
 * On macOS the `-d` parameter is `/dev/cu.usbmodemDE...` where ... is the serialnumber.
+* Flashing a ConBee II: the watchdog reset makes the stick reboot into the V1 bootloader and re-enumerate USB, so the port is closed and reopened before the bootloader is queried. Committing the flash can take up to a minute, so the default retry timeout is 60 seconds.
 
 ## Building on Linux
 
@@ -132,7 +133,7 @@ options:
  -H <host>       send sniffer traffic to Wireshark running on host
                  default is 127.0.0.1 (localhost)
  -c              connect and debug serial protocol
- -t <timeout>    retry until timeout (seconds) is reached
+ -t <timeout>    retry until timeout (seconds) is reached, default 60
  -l              list devices
  -x <loglevel>   debug log level 0, 1, 3
  -i              interactive mode for debugging

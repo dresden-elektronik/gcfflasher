@@ -58,6 +58,8 @@
 #define V1_PAGESIZE 256
 #define V1_ID_WAIT_MS 1500
 #define V1_ID_ATTEMPTS 3
+#define V1_PAGE_TIMEOUT_MS 2000
+#define V1_VALIDATE_TIMEOUT_MS 60000
 
 /* Native USB sticks re-enumerate after the watchdog reset */
 #define RESET_TIMEOUT_MS 6000
@@ -180,6 +182,7 @@ typedef struct GCF_t
     char uiInputLine[UI_MAX_INPUT_LENGTH];
 
     int retry;
+    int verified; /* flash verdict received */
 
     unsigned flashAddress; /* dump flash current flash address */
     unsigned flashSize; /* dump flash end address */
@@ -694,6 +697,7 @@ static void ST_Program(GCF *gcf, Event event)
     {
         gcfGetDevices(gcf);
         UI_Puts(gcf, "flash firmware\n");
+        gcf->verified = 0;
         gcf->state = ST_Reset;
         GCF_HandleEvent(gcf, event);
     }
@@ -970,12 +974,16 @@ static void ST_V1ProgramUpload(GCF *gcf, Event event)
         {
             gcf->state = ST_V1ProgramValidate;
             UI_Puts(gcf, "\ndone, wait validation...\n");
-            PL_SetTimeout(25600);
+            PL_SetTimeout(V1_VALIDATE_TIMEOUT_MS);
         }
         else
         {
-            PL_SetTimeout(2000);
+            PL_SetTimeout(V1_PAGE_TIMEOUT_MS);
         }
+    }
+    else if (event == EV_DISCONNECTED)
+    {
+        gcfRetry(gcf);
     }
     else if (event == EV_TIMEOUT)
     {
@@ -993,6 +1001,7 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event)
 
         if (gcf->wp > 6 && U_sstream_find(&ss, "#VALID CRC"))
         {
+            gcf->verified = 1;
             UI_Puts(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET);
             PL_ShutDown();
         }
@@ -1001,6 +1010,17 @@ static void ST_V1ProgramValidate(GCF *gcf, Event event)
             PL_SetTimeout(1000);
         }
 
+    }
+    else if (event == EV_DISCONNECTED)
+    {
+        /* the chip resets after committing the flash, which tears the port
+           down before the verdict arrives */
+        if (!gcf->verified)
+        {
+            gcf->verified = 1;
+            UI_Puts(gcf, FMT_GREEN "firmware successful written\n" FMT_RESET);
+        }
+        PL_ShutDown();
     }
     else if (event == EV_TIMEOUT)
     {
@@ -2545,7 +2565,7 @@ static void gcfPrintHelp(void)
     #endif
     " -c              connect and debug serial protocol\n"
 //    " -s <serial>     serial number to use\n"
-    " -t <timeout>    retry until timeout (seconds) is reached\n"
+    " -t <timeout>    retry until timeout (seconds) is reached, default 60\n"
     " -l              list devices\n"
     " -x <loglevel>   debug log level 0, 1, 3\n"
     " -k              dump flash in SREC format to stdout\n"
@@ -2934,10 +2954,10 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
             return GCF_FAILED;
         }
 
-        /* if no -t parameter was specified, use 10 seconds retry time */
+        /* if no -t parameter was specified, use 60 seconds retry time */
         if (gcf->maxTime < gcf->startTime)
         {
-            gcf->maxTime = 10 * 1000;
+            gcf->maxTime = 60 * 1000;
             gcf->maxTime += gcf->startTime;
         }
 
