@@ -62,6 +62,7 @@ int plResetFtdiLibGpiod(void);
 #ifdef PL_MAC
   #include "posix_libftdi_reset.c"
 int plGetMacOSUSBDevices(Device *dev, Device *end);
+int plGetMacOSIOKitDevices(Device *dev, Device *end);
 #endif
 
 static int plSetupPort(int fd, int baudrate)
@@ -294,7 +295,11 @@ int PL_GetDevices(Device *devs, unsigned max)
 #endif
 
 #ifdef PL_MAC
-    result = plGetMacOSUSBDevices(devs, devs + max);
+    result = plGetMacOSIOKitDevices(devs, devs + max);
+    if (result == 0) // fallback for older macOS versions without the expected IORegistry layout
+    {
+        result = plGetMacOSUSBDevices(devs, devs + max);
+    }
 #endif
 
     return result;

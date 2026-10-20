@@ -84,7 +84,9 @@ if (UNIX)
         target_compile_definitions(${PROJECT_NAME} PRIVATE PL_MAC=1)
         target_sources(${PROJECT_NAME}
                 PRIVATE
-                macos_get_usb_devices.c)
+                macos_get_usb_devices.c
+                macos_iokit_devices.c)
+        target_link_libraries(${PROJECT_NAME} PRIVATE "-framework IOKit" "-framework CoreFoundation")
     endif()
 endif()
 
