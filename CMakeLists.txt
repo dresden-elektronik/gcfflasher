@@ -85,7 +85,8 @@ if (UNIX)
         target_sources(${PROJECT_NAME}
                 PRIVATE
                 macos_get_usb_devices.c
-                macos_iokit_devices.c)
+                macos_iokit_devices.c
+                macos_iokit_reset.c)
         target_link_libraries(${PROJECT_NAME} PRIVATE "-framework IOKit" "-framework CoreFoundation")
     endif()
 endif()

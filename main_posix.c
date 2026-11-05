@@ -60,9 +60,9 @@ int plResetFtdiLibGpiod(void);
 #endif
 
 #ifdef PL_MAC
-  #include "posix_libftdi_reset.c"
 int plGetMacOSUSBDevices(Device *dev, Device *end);
 int plGetMacOSIOKitDevices(Device *dev, Device *end);
+int plResetMacOSFtdi(const char *serial);
 #endif
 
 static int plSetupPort(int fd, int baudrate)
@@ -127,8 +127,8 @@ int PL_ResetFTDI(int num, const char *serialnum)
     return plResetFtdiLibGpiod();
 #endif
 
-#ifdef HAS_LIBFTDI
-    return plResetLibFtdi();
+#ifdef PL_MAC
+    return plResetMacOSFtdi(serialnum);
 #endif
 
     return -1;

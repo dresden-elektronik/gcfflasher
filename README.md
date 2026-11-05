@@ -97,11 +97,10 @@ The executable is `build\Release\GCFFlasher4.exe`.
 
 ### Dependencies
 
-The executable can be compiled without any dependencies for ConBee II. To support ConBee I the library `libftdi` needs to be installed.
+The executable can be compiled without any dependencies, it only uses the IOKit and CoreFoundation frameworks of macOS.
 
 * A C99 compiler like GCC or Clang
 * CMake
-* (optional) the `libftdi` development package for ConBee I can be installed via `brew install libftdi` using [Homebrew](https://brew.sh). 
 
 ### Build
 
