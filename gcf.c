@@ -464,10 +464,13 @@ static void ST_Init(GCF *gcf, Event event)
     }
 }
 
-/*! The bootloader of ConBee I and RaspBee I speaks 38400, whatever rate the firmware uses. */
+/*! The bootloader of ConBee I, RaspBee I and RaspBee II speaks 38400, whatever rate the firmware uses. */
 static PL_Baudrate gcfBootloaderBaudrate(const GCF *gcf)
 {
-    return gcf->devBaudrate == PL_BAUDRATE_57600 ? PL_BAUDRATE_38400 : gcf->devBaudrate;
+    if (gcf->devType == DEV_RASPBEE_2 || gcf->devBaudrate == PL_BAUDRATE_57600)
+        return PL_BAUDRATE_38400;
+
+    return gcf->devBaudrate;
 }
 
 /*! Changes the rate of the open port, which is no disconnect for the reset states. */
@@ -550,7 +553,7 @@ static void ST_ResetUart(GCF *gcf, Event event)
     {
         gcf->resetBaudrate = gcf->devBaudrate;
 
-        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
+        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_RASPBEE_2 || gcf->devType == DEV_CONBEE_1)
             PL_SetTimeout(V1_RESET_TIMEOUT_MS);
         else
             PL_SetTimeout(RESET_TIMEOUT_MS);
@@ -587,23 +590,24 @@ static void ST_ResetUart(GCF *gcf, Event event)
     else if (event == EV_PKG_UART_RESET)
     {
         UI_Puts(gcf, "command UART reset done\n");
-        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
+        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_RASPBEE_2 || gcf->devType == DEV_CONBEE_1)
         {
-            /* due FTDI don't wait for disconnect */
+            /* a UART link does not disconnect, don't wait for it */
             PL_ClearTimeout();
 
-            if (gcf->resetBaudrate == PL_BAUDRATE_57600)
-                gcfReconnectUart(gcf, PL_BAUDRATE_38400);
+            if (gcf->resetBaudrate != gcfBootloaderBaudrate(gcf))
+                gcfReconnectUart(gcf, gcfBootloaderBaudrate(gcf));
 
             GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
         }
     }
     else if (event == EV_TIMEOUT && gcf->resetBaudrate == PL_BAUDRATE_38400 &&
-             (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1))
+             (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_RASPBEE_2 || gcf->devType == DEV_CONBEE_1))
     {
-        /* the firmware may run at the higher rate */
-        UI_Puts(gcf, "no reply, retry at 57600 baud\n");
-        gcf->resetBaudrate = PL_BAUDRATE_57600;
+        /* the firmware may run at a higher rate */
+        gcf->resetBaudrate = gcf->devType == DEV_RASPBEE_2 ? PL_BAUDRATE_115200 : PL_BAUDRATE_57600;
+        UI_Puts(gcf, gcf->devType == DEV_RASPBEE_2 ? "no reply, retry at 115200 baud\n"
+                                                    : "no reply, retry at 57600 baud\n");
         PL_SetTimeout(V1_RESET_TIMEOUT_MS);
 
         if (gcfReconnectUart(gcf, gcf->resetBaudrate) == GCF_SUCCESS)
