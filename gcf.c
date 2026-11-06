@@ -66,6 +66,8 @@
 
 /* Native USB sticks re-enumerate after the watchdog reset */
 #define RESET_TIMEOUT_MS 6000
+/* ConBee I and RaspBee I never re-enumerate, the firmware replies right away if it hears us */
+#define V1_RESET_TIMEOUT_MS 1000
 #define BTL_ID_WAIT_MS 200
 #define BTL_CONNECT_SETTLE_MS 500
 #define BTL_CONNECT_RETRY_MS 500
@@ -216,6 +218,7 @@ typedef struct GCF_t
     DeviceType devType;
 
     PL_Baudrate devBaudrate;
+    PL_Baudrate resetBaudrate;
     char devpath[MAX_DEV_PATH_LENGTH];
     char devSerialNum[MAX_DEV_SERIALNR_LENGTH];
     int btlBannerMissed;
@@ -460,6 +463,21 @@ static void ST_Init(GCF *gcf, Event event)
     }
 }
 
+/*! The bootloader of ConBee I and RaspBee I speaks 38400, whatever rate the firmware uses. */
+static PL_Baudrate gcfBootloaderBaudrate(const GCF *gcf)
+{
+    return gcf->devBaudrate == PL_BAUDRATE_57600 ? PL_BAUDRATE_38400 : gcf->devBaudrate;
+}
+
+/*! Changes the rate of the open port, which is no disconnect for the reset states. */
+static GCF_Status gcfReconnectUart(GCF *gcf, PL_Baudrate baudrate)
+{
+    gcf->substate = ST_Void;
+    PL_Disconnect();
+    gcf->substate = ST_ResetUart;
+    return PL_Connect(gcf->devpath, baudrate);
+}
+
 static void ST_Reset(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
@@ -486,7 +504,7 @@ static void ST_Reset(GCF *gcf, Event event)
     {
         if (gcf->devType == DEV_CONBEE_1)
         {
-            if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+            if (PL_Connect(gcf->devpath, gcfBootloaderBaudrate(gcf)) == GCF_SUCCESS)
             {
                 gcf->substate = ST_ResetFtdi;
                 gcf->substate(gcf, EV_ACTION);
@@ -495,7 +513,7 @@ static void ST_Reset(GCF *gcf, Event event)
         }
         else if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_RASPBEE_2)
         {
-            if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+            if (PL_Connect(gcf->devpath, gcfBootloaderBaudrate(gcf)) == GCF_SUCCESS)
             {
                 gcf->substate = ST_ResetRaspBee;
                 gcf->substate(gcf, EV_ACTION);
@@ -529,9 +547,14 @@ static void ST_ResetUart(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
-        PL_SetTimeout(RESET_TIMEOUT_MS);
+        gcf->resetBaudrate = gcf->devBaudrate;
 
-        if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
+            PL_SetTimeout(V1_RESET_TIMEOUT_MS);
+        else
+            PL_SetTimeout(RESET_TIMEOUT_MS);
+
+        if (PL_Connect(gcf->devpath, gcf->resetBaudrate) == GCF_SUCCESS)
         {
             if (gcf->task == T_RESET)
             {
@@ -567,7 +590,24 @@ static void ST_ResetUart(GCF *gcf, Event event)
         {
             /* due FTDI don't wait for disconnect */
             PL_ClearTimeout();
+
+            if (gcf->resetBaudrate == PL_BAUDRATE_57600)
+                gcfReconnectUart(gcf, PL_BAUDRATE_38400);
+
             GCF_HandleEvent(gcf, EV_UART_RESET_SUCCESS);
+        }
+    }
+    else if (event == EV_TIMEOUT && gcf->resetBaudrate == PL_BAUDRATE_38400 &&
+             (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1))
+    {
+        /* the firmware may run at the higher rate */
+        UI_Puts(gcf, "no reply, retry at 57600 baud\n");
+        gcf->resetBaudrate = PL_BAUDRATE_57600;
+        PL_SetTimeout(V1_RESET_TIMEOUT_MS);
+
+        if (gcfReconnectUart(gcf, gcf->resetBaudrate) == GCF_SUCCESS)
+        {
+            gcfCommandResetUart();
         }
     }
     else if (event == EV_TIMEOUT)
@@ -746,7 +786,7 @@ static void ST_BootloaderConnect(GCF *gcf, Event event)
     }
     else if (event == EV_TIMEOUT)
     {
-        if (PL_Connect(gcf->devpath, gcf->devBaudrate) == GCF_SUCCESS)
+        if (PL_Connect(gcf->devpath, gcfBootloaderBaudrate(gcf)) == GCF_SUCCESS)
         {
             gcf->state = ST_BootloaderQuery;
             GCF_HandleEvent(gcf, EV_ACTION);
@@ -2688,6 +2728,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     gcf->btlBannerMissed = 0;
     gcf->devType = DEV_UNKNOWN;
     gcf->devBaudrate = PL_BAUDRATE_UNKNOWN;
+    gcf->resetBaudrate = PL_BAUDRATE_UNKNOWN;
     gcf->file.fname[0] = '\0';
     gcf->file.gcfFileType = 0;
     gcf->file.fsize = 0;
@@ -2807,7 +2848,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
 
                     longval = U_sstream_get_long(&ss); /* baudrate */
 
-                    if (ss.status != U_SSTREAM_OK || !(longval == PL_BAUDRATE_38400 || longval == PL_BAUDRATE_115200))
+                    if (ss.status != U_SSTREAM_OK || !(longval == PL_BAUDRATE_38400 || longval == PL_BAUDRATE_57600 || longval == PL_BAUDRATE_115200))
                     {
                         PL_Printf(DBG_INFO, "invalid argument, %s, for parameter -b\n", arg);
                         return GCF_FAILED;

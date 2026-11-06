@@ -194,6 +194,10 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     {
         baudrate1 = B38400;
     }
+    else if (baudrate == PL_BAUDRATE_57600)
+    {
+        baudrate1 = B57600;
+    }
     else if (baudrate == PL_BAUDRATE_115200)
     {
         baudrate1 = B115200;

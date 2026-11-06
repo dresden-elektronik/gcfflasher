@@ -43,6 +43,7 @@ typedef enum
 {
     PL_BAUDRATE_UNKNOWN = 0,
     PL_BAUDRATE_38400 = 38400,
+    PL_BAUDRATE_57600 = 57600,
     PL_BAUDRATE_115200 = 115200
 } PL_Baudrate;
 

@@ -534,6 +534,10 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
     {
         dcbSerialParams.BaudRate = CBR_38400;
     }
+    else if (baudrate == PL_BAUDRATE_57600)
+    {
+        dcbSerialParams.BaudRate = CBR_57600;
+    }
     else if (baudrate == PL_BAUDRATE_115200)
     {
         dcbSerialParams.BaudRate = CBR_115200;
