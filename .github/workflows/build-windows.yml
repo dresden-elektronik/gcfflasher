@@ -24,7 +24,7 @@ jobs:
 
       - name: Configure
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Release -DUSE_FTD2XX:BOOL=OFF -DUSE_SNIFF:BOOL=ON -A ${{ matrix.cmake_arch }} -S . -B build
+          cmake -DCMAKE_BUILD_TYPE=Release -DUSE_SNIFF:BOOL=ON -A ${{ matrix.cmake_arch }} -S . -B build
 
       - name: Build
         run: |

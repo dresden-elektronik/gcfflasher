@@ -33,16 +33,18 @@
 /* in gcf.c for now */
 extern void U_sstream_put_u32hex(U_SStream *ss, unsigned long val);
 
-#ifdef USE_FTD2XX
-  #include "ftd2xx/ftd2xx.h"
-#endif
-
 // https://hero.handmade.network/forums/code-discussion/t/94-guide_-_how_to_avoid_c_c++_runtime_on_windows
+
+#define FTDIBUS_IOCTL_SET_BITMODE 0x222178
+#define FTDI_BITMODE_RESET 0x00
+#define FTDI_BITMODE_CBUS  0x20
 
 typedef struct
 {
     PL_time_t timer;
     HANDLE fd;
+    char fdPath[8]; /* to reopen the port after the FTDI reset */
+    PL_Baudrate fdBaudrate;
     HANDLE hOut;
     int running;
     unsigned char rxbuf[1024];
@@ -474,6 +476,10 @@ GCF_Status PL_Connect(const char *path, PL_Baudrate baudrate)
         return GCF_FAILED;
     }
 
+    U_sstream_init(&ss, platform.fdPath, sizeof(platform.fdPath));
+    U_sstream_put_str(&ss, path);
+    platform.fdBaudrate = baudrate;
+
     U_sstream_init(&ss, buf, sizeof(buf));
     if (*path == 'C')
     {
@@ -595,100 +601,130 @@ void PL_ShutDown(void)
     platform.running = 0;
 }
 
-/*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
-int PL_ResetFTDI(int num, const char *serialnum)
+/*! Tells if \p serial belongs to a ConBee I. The ConBee III has the same USB IDs and must never be pulsed. */
+static int plIsConBee1(const char *serial)
 {
-    (void)num;
-#ifdef USE_FTD2XX
-
-    unsigned seriallen;
-    DWORD dev;
-    DWORD numDevs;
-    DWORD deviceId;
-    FT_HANDLE ftHandle;
-    FT_STATUS ftStatus;
-    FT_DEVICE device;
-    char serial[MAX_DEV_SERIALNR_LENGTH];
-    char description[64];
+    static Device devs[16];
     U_SStream ss;
+    unsigned len;
+    unsigned i;
 
-    seriallen = U_strlen(serialnum);
+    len = U_strlen(serial);
+    if (len == 0)
+        return 0;
 
-    if (seriallen == 0) /* require serial number */
-        return -1;
+    PL_GetDevices(&devs[0], sizeof(devs) / sizeof(devs[0]));
 
-    U_sstream_init(&ss, (char*)serialnum, seriallen);
-
-    if (FT_Initialise() != FT_OK)
+    for (i = 0; i < sizeof(devs) / sizeof(devs[0]); i++)
     {
-        return -1;
-    }
-
-    if (FT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY) != FT_OK)
-    {
-        return -1;
-    }
-
-    if (numDevs == 0)
-    {
-        return -1;
-    }
-
-    for (dev = 0; dev < numDevs; dev++)
-    {
-        ftStatus = FT_Open((int)dev, &ftHandle);
-
-        if (ftStatus != FT_OK)
+        if (U_strlen(devs[i].serial) != len)
             continue;
 
-        serial[0] = '\0';
-        ftStatus = FT_GetDeviceInfo(ftHandle, &device, &deviceId, serial, description, NULL);
+        U_sstream_init(&ss, devs[i].serial, len);
+        if (U_sstream_starts_with(&ss, serial) == 0)
+            continue;
 
-        if (ftStatus == FT_OK)
-        {
-            if (U_sstream_starts_with(&ss, &serial[0]))
-            {
-                UCHAR ucMask = 0xf1; // CBUS0 --> 1
-
-                /* ucMask - Required value for bit mode mask. This sets up which bits are inputs and
-                   outputs. A bit value of 0 sets the corresponding pin to an input, a bit
-                   value of 1 sets the corresponding pin to an output.
-                 */
-                ucMask = 0xf1; // CBUS0 --> 1
-                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
-                if (ftStatus != FT_OK)
-                    goto err_close;
-
-                ucMask = 0xf0;  // CBUS0 --> 0
-                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
-                if (ftStatus != FT_OK)
-                    goto err_close;
-
-                ucMask = 0xf1; // CBUS0 --> 1
-                ftStatus = FT_SetBitMode(ftHandle, ucMask, FT_BITMODE_CBUS_BITBANG);
-                if (ftStatus != FT_OK)
-                    goto err_close;
-
-                ftStatus = FT_SetBitMode(ftHandle, 0, FT_BITMODE_RESET);
-                if (ftStatus != FT_OK)
-                    goto err_close;
-
-                FT_Close(ftHandle);
-
-                return 0;
-            }
-        }
-
-err_close:
-        FT_Close(ftHandle);
-
+        U_sstream_init(&ss, devs[i].name, U_strlen(devs[i].name));
+        return U_sstream_starts_with(&ss, "Serial FTDI") != 0;
     }
-#endif /* USE_FTD2XX */
 
-    return -1;
+    return 0;
 }
 
-/*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */
+static int plSetBitMode(HANDLE dev, unsigned char mask, unsigned char mode)
+{
+    unsigned char request[2];
+    DWORD returned;
+
+    request[0] = mask;
+    request[1] = mode;
+    returned = 0;
+
+    return DeviceIoControl(dev, FTDIBUS_IOCTL_SET_BITMODE, &request[0], sizeof(request), NULL, 0, &returned, NULL) != 0;
+}
+
+/*! Executes a MCU reset for ConBee I via FTDI CBUS0, which is wired to the MCU reset pin.
+
+    This talks to FTDI's bus driver, which Windows has bound to the device, so no
+    vendor library is needed. Its handle is exclusive, so the COM port is closed
+    around the pulse. The driver's interface is undocumented and this only has been
+    tested with driver version 2.12.36.20; any other outcome is a failed reset.
+
+    \param serial USB serial number of the device, no other device is touched.
+
+    \returns PL_RESET_PORT_REOPENED or 0 on success, or -1 on failure.
+*/
+int PL_ResetFTDI(int num, const char *serialnum)
+{
+    static const unsigned char masks[3] = { 0xf1, 0xf0, 0xf1 }; /* high nibble: direction, low nibble: level */
+    char path[128];
+    HANDLE dev;
+    U_SStream ss;
+    unsigned i;
+    int connected;
+    int result;
+
+    (void)num;
+
+    if (plIsConBee1(serialnum) == 0)
+        return -1;
+
+    U_sstream_init(&ss, path, sizeof(path));
+    U_sstream_put_str(&ss, "\\\\?\\usb#vid_0403&pid_6015#");
+    U_sstream_put_str(&ss, serialnum);
+    U_sstream_put_str(&ss, "#{219d0508-57a8-4ff5-97a1-bd86587c6c7e}");
+    if (ss.status != U_SSTREAM_OK)
+        return -1;
+
+    /* not PL_Disconnect(), this is no disconnect for the state machine */
+    connected = platform.fd != INVALID_HANDLE_VALUE;
+    if (connected)
+    {
+        platform.txpos = 0;
+        CloseHandle(platform.fd);
+        platform.fd = INVALID_HANDLE_VALUE;
+    }
+
+    result = -1;
+    dev = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (dev != INVALID_HANDLE_VALUE)
+    {
+        result = 0;
+
+        for (i = 0; i < sizeof(masks); i++)
+        {
+            if (plSetBitMode(dev, masks[i], FTDI_BITMODE_CBUS) == 0)
+            {
+                result = -1;
+                break;
+            }
+            if (i + 1 < sizeof(masks))
+                PL_MSleep(10);
+        }
+
+        /* always give the CBUS pins back, also after a failed request */
+        if (plSetBitMode(dev, 0, FTDI_BITMODE_RESET) == 0)
+            result = -1;
+
+        CloseHandle(dev);
+    }
+    else
+    {
+        PL_Printf(DBG_DEBUG, "failed to open %s, error %lu\n", path, (unsigned long)GetLastError());
+    }
+
+    if (connected)
+    {
+        if (PL_Connect(platform.fdPath, platform.fdBaudrate) != GCF_SUCCESS)
+            return -1;
+
+        if (result == 0)
+            return PL_RESET_PORT_REOPENED;
+    }
+
+    return result;
+}
+
 int PL_ResetRaspBee(void)
 {
     return -1;

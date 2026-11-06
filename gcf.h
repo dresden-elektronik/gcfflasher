@@ -148,7 +148,12 @@ void PL_Disconnect(void);
 /*! Shuts down platform layer (ends main loop). */
 void PL_ShutDown(void);
 
-/*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset. */
+/*! Executes a MCU reset for ConBee I via FTDI CBUS0 reset.
+
+    \returns 0 on success, PL_RESET_PORT_REOPENED on success if the serial port had to
+              be closed meanwhile, so the bootloader banner was missed, or -1 on failure.
+*/
+#define PL_RESET_PORT_REOPENED 1
 int PL_ResetFTDI(int num, const char *serialnum);
 
 /*! Executes a MCU reset for RaspBee I / II via GPIO17 reset pin. */

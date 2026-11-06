@@ -110,7 +110,6 @@ if (DOS)
 endif()
 
 if (WIN32)
-    option(USE_FTD2XX "Use FTDI ftd2xx library on Windows" OFF)
     target_sources(${PROJECT_NAME} PRIVATE main_windows.c)
 
     if(MINGW)
@@ -143,18 +142,6 @@ if (WIN32)
 
         if (MSVC_VERSION GREATER_EQUAL 1700)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /utf-8")
-        endif()
-
-        if (USE_FTD2XX)
-            if ("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
-                target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/i386/ftd2xx.lib)
-            else()
-                target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/ftd2xx/Static/amd64/ftd2xx.lib)
-            endif()
-            target_compile_definitions(${PROJECT_NAME} PRIVATE
-                    FTD2XX_STATIC
-                    USE_FTD2XX
-            )
         endif()
     endif()
 

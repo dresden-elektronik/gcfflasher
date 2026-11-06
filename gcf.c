@@ -58,6 +58,9 @@
 #define V1_PAGESIZE 256
 #define V1_ID_WAIT_MS 1500
 #define V1_ID_ATTEMPTS 3
+/* Keys sent during the banner of the V1 bootloader can get lost, it takes about 50 ms.
+   They were accepted 200 ms after the reset, and ignored after 300 ms. */
+#define V1_BANNER_WAIT_MS 100
 #define V1_PAGE_TIMEOUT_MS 2000
 #define V1_VALIDATE_TIMEOUT_MS 60000
 
@@ -215,6 +218,7 @@ typedef struct GCF_t
     PL_Baudrate devBaudrate;
     char devpath[MAX_DEV_PATH_LENGTH];
     char devSerialNum[MAX_DEV_SERIALNR_LENGTH];
+    int btlBannerMissed;
     GCF_File file;
 } GCF;
 
@@ -580,8 +584,11 @@ static void ST_ResetFtdi(GCF *gcf, Event event)
 {
     if (event == EV_ACTION)
     {
-        if (PL_ResetFTDI(0, &gcf->devSerialNum[0]) == 0)
+        int result = PL_ResetFTDI(0, &gcf->devSerialNum[0]);
+
+        if (result == 0 || result == PL_RESET_PORT_REOPENED)
         {
+            gcf->btlBannerMissed = result == PL_RESET_PORT_REOPENED;
             UI_Puts(gcf, "FTDI reset done\n");
             GCF_HandleEvent(gcf, EV_FTDI_RESET_SUCCESS);
         }
@@ -703,7 +710,15 @@ static void ST_Program(GCF *gcf, Event event)
     }
     else if (event == EV_RESET_SUCCESS)
     {
-        if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
+        if (gcf->btlBannerMissed)
+        {
+            /* Not a timeout: on Windows those can fire about 1 s late, past the key window. */
+            gcf->btlBannerMissed = 0;
+            PL_MSleep(V1_BANNER_WAIT_MS);
+            gcf->state = ST_V1ProgramSync;
+            GCF_HandleEvent(gcf, EV_ACTION);
+        }
+        else if (gcf->devType == DEV_RASPBEE_1 || gcf->devType == DEV_CONBEE_1)
         {
             PL_SetTimeout(5000);
             gcf->state = ST_BootloaderQuery; /* wait for bootloader message */
@@ -2670,6 +2685,7 @@ static GCF_Status gcfProcessCommandline(GCF *gcf)
     gcf->sniffChannel = 0;
     gcf->devpath[0] = '\0';
     gcf->devSerialNum[0] = '\0';
+    gcf->btlBannerMissed = 0;
     gcf->devType = DEV_UNKNOWN;
     gcf->devBaudrate = PL_BAUDRATE_UNKNOWN;
     gcf->file.fname[0] = '\0';
