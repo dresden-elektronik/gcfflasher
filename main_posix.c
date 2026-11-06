@@ -416,10 +416,18 @@ int PROT_Flush(void)
 void UI_GetWinSize(unsigned *w, unsigned *h)
 {
     struct winsize size;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
 
-    *w = size.ws_col;
-    *h = size.ws_row;
+    /* with stdout not a terminal the ioctl fails and leaves size unset */
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col != 0 && size.ws_row != 0)
+    {
+        *w = size.ws_col;
+        *h = size.ws_row;
+    }
+    else
+    {
+        *w = 80;
+        *h = 24;
+    }
 }
 
 /*  Unicode box drawing chars

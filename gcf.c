@@ -424,7 +424,8 @@ static void UI_UpdateProgress(GCF *gcf)
     U_sstream_put_long(&ss, percent);
     U_sstream_put_str(&ss, "% uploading ");
 
-    w = wmax - ss.pos - 2;
+    /* a terminal too narrow for the text gets no bar */
+    w = wmax > ss.pos + 2 ? wmax - ss.pos - 2 : 0;
     ndone = (total - gcf->remaining) * w / total;
 
     for (i = 0; i < w; i++)
