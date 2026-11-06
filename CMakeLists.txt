@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.10)
-project (GCFFlasher VERSION 4.12.3)
+project (GCFFlasher VERSION 4.12.4)
 
 option(USE_NET "Support connection via network sockets" OFF)
 option(USE_SNIFF "Support sniffer firmware" ON)
