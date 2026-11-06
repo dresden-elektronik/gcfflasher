@@ -289,10 +289,10 @@ int plResetRaspBeeLibGpiod(void)
 
     if (line_req)
     {
-        /* TODO not tested yet due lack of libgpoid version 2 for Raspberry Pi */
-        ret = fn_gpiod_line_request_set_value(line_req, 0, GPIOD_LINE_VALUE_INACTIVE);
+        ret = fn_gpiod_line_request_set_value(line_req, 17, GPIOD_LINE_VALUE_INACTIVE);
         Assert(ret == 0);
-        ret = fn_gpiod_line_request_set_value(line_req, 0, GPIOD_LINE_VALUE_ACTIVE);
+        PL_MSleep(200);
+        ret = fn_gpiod_line_request_set_value(line_req, 17, GPIOD_LINE_VALUE_ACTIVE);
         Assert(ret == 0);
         fn_gpiod_line_request_release(line_req);
         ret = 0;
